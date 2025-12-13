@@ -1,4 +1,4 @@
-module gitee.com/qq1101931365/go_verdor
+module github.com/lwy110193/go_vendor
 
 go 1.25.0
 
