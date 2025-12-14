@@ -159,6 +159,7 @@ func GinTraceMiddleware() gin.HandlerFunc {
 
 		c.Set("tracer", tracer)
 		c.Set("span", span)
+		c.Set("span_ctx", ctx)
 		c.Set("traceID", span.SpanContext().TraceID().String())
 		c.Set("spanID", span.SpanContext().SpanID().String())
 
