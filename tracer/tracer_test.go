@@ -9,8 +9,8 @@ import (
 
 	"strings"
 
-	mylog "gitee.com/qq1101931365/go_verdor/log"
 	"github.com/google/uuid"
+	mylog "github.com/lwy110193/go_vendor/log"
 )
 
 // TestOtlpWithJaeger 测试OTLPExample函数

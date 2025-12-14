@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"gitee.com/qq1101931365/go_verdor/utils"
+	"github.com/lwy110193/go_vendor/utils"
 	"github.com/pkg/errors"
 	"gorm.io/gorm"
 	"gorm.io/gorm/schema"

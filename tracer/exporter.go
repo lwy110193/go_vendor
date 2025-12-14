@@ -4,7 +4,7 @@ import (
 	"context"
 	stdlog "log"
 
-	mylog "gitee.com/qq1101931365/go_verdor/log"
+	mylog "github.com/lwy110193/go_vendor/log"
 
 	otlptrace "go.opentelemetry.io/otel/exporters/otlp/otlptrace"
 	otlptracehttp "go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp"

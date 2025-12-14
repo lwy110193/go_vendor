@@ -5,8 +5,8 @@ import (
 	stdlog "log"
 	"testing"
 
-	"gitee.com/qq1101931365/go_verdor/log"
-	trace "gitee.com/qq1101931365/go_verdor/tracer"
+	"github.com/lwy110193/go_vendor/log"
+	trace "github.com/lwy110193/go_vendor/tracer"
 )
 
 func TestLogger(t *testing.T) {

@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"gitee.com/qq1101931365/go_verdor/utils"
+	"github.com/lwy110193/go_vendor/utils"
 )
 
 // whereCondition 条件运算符

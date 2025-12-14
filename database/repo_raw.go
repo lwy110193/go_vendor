@@ -8,11 +8,10 @@ import (
 	"strings"
 	"time"
 
-	"gitee.com/qq1101931365/go_verdor/utils"
+	"github.com/lwy110193/go_vendor/utils"
 	perrors "github.com/pkg/errors"
 	"gorm.io/gorm"
 	"gorm.io/gorm/schema"
-	
 )
 
 // Raw 原始SQL查询
