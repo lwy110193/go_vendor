@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"testing"
+	"time"
 
 	"github.com/lwy110193/go_vendor/database"
 	"github.com/lwy110193/go_vendor/utils"
@@ -85,4 +86,25 @@ func TestBaseRepo_FindOne(t *testing.T) {
 		return
 	}
 	fmt.Printf("item = %#v\n", item)
+}
+
+type TeTable struct {
+	ID        uint64    `gorm:"primaryKey;autoIncrement;column:id;comment:id"`
+	CreatedAt time.Time `gorm:"column:created_at;type:datetime;index;autoCreateTime;not null;comment:创建时间"`
+	UpdatedAt time.Time `gorm:"column:updated_at;type:datetime;index;autoCreateTime;not null;comment:更新时间"`
+	DeletedAt time.Time `gorm:"column:deleted_at;type:datetime;default:null;comment:删除时间"`
+	Field1    string    `gorm:"column:field1;type:char(20);comment:字段1"`
+	Field2    string    `gorm:"column:field2;type:varchar(100);comment:字段2"`
+}
+
+func (t *TeTable) TableName() string {
+	return "te_table"
+}
+
+func Test_CreateTableTe(t *testing.T) {
+	err := db.AutoMigrate(&TeTable{})
+	if err != nil {
+		t.Errorf("AutoMigrate() error = %v", err)
+		return
+	}
 }
