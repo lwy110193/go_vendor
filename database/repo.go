@@ -16,7 +16,7 @@ type BaseRepo struct {
 }
 
 // Find 查找数据
-func (r *BaseRepo) Find(ctx context.Context, where utils.MI, info *DbExtInfo, fieldList ...string) (list []schema.Tabler, cnt int64, err error) {
+func (r *BaseRepo) Find(ctx context.Context, resultList interface{}, where utils.MI, info *DbExtInfo, fieldList ...string) (cnt int64, err error) {
 	db := r.Db.WithContext(ctx)
 	query, args := ParseWhere(where)
 	if len(fieldList) > 0 {
@@ -34,15 +34,15 @@ func (r *BaseRepo) Find(ctx context.Context, where utils.MI, info *DbExtInfo, fi
 			db = db.Order(fmt.Sprintf("%v %v", info.OrderInfo.Field, info.OrderInfo.OrderType))
 		}
 	}
-	if err = db.Find(&list).Error; err != nil {
-		return nil, 0, errors.WithStack(err)
+	if err = db.Find(resultList).Error; err != nil {
+		return 0, errors.WithStack(err)
 	}
 
-	return list, cnt, nil
+	return cnt, nil
 }
 
 // FindOne 查找一条数据
-func (r *BaseRepo) FindOne(ctx context.Context, where utils.MI, fieldList ...string) (schema.Tabler, error) {
+func (r *BaseRepo) FindOne(ctx context.Context, result interface{}, where utils.MI, fieldList ...string) error {
 	db := r.Db.WithContext(ctx)
 	query, args := ParseWhere(where)
 	if len(fieldList) > 0 {
@@ -52,10 +52,10 @@ func (r *BaseRepo) FindOne(ctx context.Context, where utils.MI, fieldList ...str
 		db = db.Where(query, args...)
 	}
 
-	if err := db.First(r.Model).Error; err != nil {
-		return nil, errors.WithStack(err)
+	if err := db.First(result).Error; err != nil {
+		return errors.WithStack(err)
 	}
-	return r.Model, nil
+	return nil
 }
 
 // Create 创建一条数据
