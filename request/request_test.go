@@ -42,7 +42,7 @@ func TestGet(t *testing.T) {
 	defer server.Close()
 
 	// 创建客户端
-	client := NewClient(nil)
+	client := NewClient(nil, nil)
 
 	// 执行GET请求
 	params := map[string]string{"param1": "value1"}
@@ -77,7 +77,7 @@ func TestGetJSON(t *testing.T) {
 	defer server.Close()
 
 	// 创建客户端
-	client := NewClient(nil)
+	client := NewClient(nil, nil)
 
 	// 执行GET请求并解析JSON
 	var mockResp MockResponse
@@ -118,7 +118,7 @@ func TestPost(t *testing.T) {
 	defer server.Close()
 
 	// 创建客户端
-	client := NewClient(nil)
+	client := NewClient(nil, nil)
 
 	// 执行POST请求
 	requestBody := []byte(`{"message":"test","code":1}`)
@@ -154,7 +154,7 @@ func TestPostJSON(t *testing.T) {
 	defer server.Close()
 
 	// 创建客户端
-	client := NewClient(nil)
+	client := NewClient(nil, nil)
 
 	// 执行POST请求并自动解析
 	var response MockResponse
@@ -198,7 +198,7 @@ func TestRetry(t *testing.T) {
 		RetryCount: 2,
 		RetryDelay: 10 * time.Millisecond, // 短延迟，加快测试
 		Timeout:    1 * time.Second,
-	})
+	}, nil)
 
 	// 执行请求
 	var response MockResponse
@@ -226,7 +226,7 @@ func TestTimeout(t *testing.T) {
 	// 创建客户端，设置超时时间为100毫秒
 	client := NewClient(&Config{
 		Timeout: 100 * time.Millisecond,
-	})
+	}, nil)
 
 	// 执行请求，应该超时
 	startTime := time.Now()
@@ -295,7 +295,7 @@ func TestUploadFile(t *testing.T) {
 	defer server.Close()
 
 	// 创建客户端
-	client := NewClient(nil)
+	client := NewClient(nil, nil)
 
 	// 创建测试文件内容
 	fileContent := bytes.NewBufferString("test file content")
@@ -348,7 +348,7 @@ func TestUploadFileJSON(t *testing.T) {
 	defer server.Close()
 
 	// 创建客户端
-	client := NewClient(nil)
+	client := NewClient(nil, nil)
 
 	// 创建测试文件内容
 	fileContent := bytes.NewBufferString("test content")
@@ -414,7 +414,7 @@ func TestUploadFiles(t *testing.T) {
 	defer server.Close()
 
 	// 创建客户端
-	client := NewClient(nil)
+	client := NewClient(nil, nil)
 
 	// 创建多个测试文件
 	files := []FileInfo{
@@ -457,7 +457,7 @@ func TestUploadFilesJSON(t *testing.T) {
 	defer server.Close()
 
 	// 创建客户端
-	client := NewClient(nil)
+	client := NewClient(nil, nil)
 
 	// 创建多个测试文件
 	files := []FileInfo{
@@ -508,7 +508,7 @@ func TestHTTPSRequest(t *testing.T) {
 	// 创建我们的客户端，复用服务器的Transport（包含正确的证书验证配置）
 	client := NewClient(&Config{
 		Timeout: 30 * time.Second,
-	})
+	}, nil)
 	// 使用服务器客户端的Transport来确保证书验证正确
 	if transport, ok := httpClient.Transport.(*http.Transport); ok {
 		client.httpClient.Transport = transport
@@ -542,7 +542,7 @@ func TestInsecureSkipVerify(t *testing.T) {
 	client := NewClient(&Config{
 		InsecureSkipVerify: true,
 		Timeout:            30 * time.Second,
-	})
+	}, nil)
 
 	// 执行HTTPS请求（不验证证书）
 	var response MockResponse

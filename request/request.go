@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"mime/multipart"
 	"net"
 	"net/http"
@@ -32,6 +33,25 @@ type Config struct {
 	CAFile             string            // CA证书文件路径
 }
 
+type LogInterface interface {
+	WriteLog(ctx context.Context, msg string, keysAndValues ...interface{})
+	FatalLog(ctx context.Context, msg string, keysAndValues ...interface{})
+}
+
+type Logger struct {
+}
+
+func (l *Logger) WriteLog(ctx context.Context, msg string, keysAndValues ...interface{}) {
+	log.Printf(msg, keysAndValues...)
+}
+
+func (l *Logger) FatalLog(ctx context.Context, msg string, keysAndValues ...interface{}) {
+	log.Fatalf(msg, keysAndValues...)
+	os.Exit(1)
+}
+
+var defaultLogger = &Logger{}
+
 // Response 响应结构体
 type Response struct {
 	StatusCode int         // 状态码
@@ -43,10 +63,15 @@ type Response struct {
 type Client struct {
 	config     *Config
 	httpClient *http.Client
+	log        LogInterface
 }
 
 // NewClient 创建新的客户端
-func NewClient(config *Config) *Client {
+func NewClient(config *Config, log LogInterface) *Client {
+	if log == nil {
+		log = defaultLogger
+	}
+
 	if config == nil {
 		config = &Config{
 			Timeout:            30 * time.Second,
@@ -84,7 +109,7 @@ func NewClient(config *Config) *Client {
 	if config.ClientCertFile != "" && config.ClientKeyFile != "" {
 		cert, err := tls.LoadX509KeyPair(config.ClientCertFile, config.ClientKeyFile)
 		if err != nil {
-			fmt.Printf("Warning: Failed to load client certificate: %v\n", err)
+			log.FatalLog(config.Context, "Warning: Failed to load client certificate: %v\n", err)
 		} else {
 			tlsConfig.Certificates = []tls.Certificate{cert}
 		}
@@ -94,13 +119,13 @@ func NewClient(config *Config) *Client {
 	if config.CAFile != "" {
 		caCert, err := os.ReadFile(config.CAFile)
 		if err != nil {
-			fmt.Printf("Warning: Failed to read CA certificate file: %v\n", err)
+			log.FatalLog(config.Context, "Warning: Failed to read CA certificate file: %v\n", err)
 		} else {
 			caCertPool := x509.NewCertPool()
 			if ok := caCertPool.AppendCertsFromPEM(caCert); ok {
 				tlsConfig.RootCAs = caCertPool
 			} else {
-				fmt.Printf("Warning: Failed to append CA certificate\n")
+				log.FatalLog(config.Context, "Warning: Failed to append CA certificate\n")
 			}
 		}
 	}
@@ -138,6 +163,7 @@ func NewClient(config *Config) *Client {
 	return &Client{
 		config:     config,
 		httpClient: httpClient,
+		log:        log,
 	}
 
 }
