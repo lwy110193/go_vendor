@@ -3,6 +3,8 @@ package crontab
 import (
 	"context"
 	"fmt"
+	"log"
+	"os"
 	"time"
 
 	"github.com/robfig/cron/v3"
@@ -19,6 +21,18 @@ type TaskConfig struct {
 type TaskLogInterface interface {
 	WriteLog(ctx context.Context, msg string, keysAndValues ...interface{})
 	FatalLog(ctx context.Context, msg string, keysAndValues ...interface{})
+}
+
+type Logger struct {
+}
+
+func (l *Logger) WriteLog(ctx context.Context, msg string, keysAndValues ...interface{}) {
+	log.Printf(msg, keysAndValues...)
+}
+
+func (l *Logger) FatalLog(ctx context.Context, msg string, keysAndValues ...interface{}) {
+	log.Fatalf(msg, keysAndValues...)
+	os.Exit(1)
 }
 
 // Task 接口表示一个可运行的任务。
