@@ -44,7 +44,7 @@ type Task interface {
 	GetDesc() string
 
 	// Run 方法运行任务的逻辑。
-	Run()
+	Run(ctx context.Context)
 
 	Log() TaskLogInterface
 
@@ -81,9 +81,11 @@ func Run(tasks []*TaskConfig) {
 		}
 		if cfg.ExecuteImmediately {
 			taskItem.Log().WriteLog(context.Background(), fmt.Sprintf("%sexecute immediately", time.Now().Format("2006-01-02 15:04:05")))
-			go taskItem.Run()
+			go taskItem.Run(context.Background())
 		}
-		_, err := c.AddFunc(cfg.Spec, taskItem.Run)
+		_, err := c.AddFunc(cfg.Spec, func() {
+			taskItem.Run(context.Background())
+		})
 		if err != nil {
 			taskItem.Log().FatalLog(context.Background(), fmt.Sprintf("[timer Add Task: %s, conf: %+v, err: %v]", taskItem.GetDesc(), cfg, err))
 			panic(0)
