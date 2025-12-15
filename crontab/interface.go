@@ -44,7 +44,7 @@ type Task interface {
 	GetDesc() string
 
 	// Run 方法运行任务的逻辑。
-	Run(ctx context.Context)
+	Run(ctx context.Context) error
 
 	Log() TaskLogInterface
 
@@ -81,15 +81,21 @@ func Run(tasks []*TaskConfig) {
 		}
 		if cfg.ExecuteImmediately {
 			taskItem.Log().WriteLog(context.Background(), fmt.Sprintf("%sexecute immediately", time.Now().Format("2006-01-02 15:04:05")))
-			go taskItem.Run(context.Background())
+			go func(t Task) {
+				if err := t.Run(context.Background()); err != nil {
+					t.Log().FatalLog(context.Background(), fmt.Sprintf("[Task: %s, err: %v]", t.GetDesc(), err))
+				}
+			}(taskItem)
 		}
 		_, err := c.AddFunc(cfg.Spec, func() {
-			taskItem.Run(context.Background())
+			if err := taskItem.Run(context.Background()); err != nil {
+				taskItem.Log().FatalLog(context.Background(), fmt.Sprintf("[Task: %s, err: %v]", taskItem.GetDesc(), err))
+			}
 		})
 		if err != nil {
-			taskItem.Log().FatalLog(context.Background(), fmt.Sprintf("[timer Add Task: %s, conf: %+v, err: %v]", taskItem.GetDesc(), cfg, err))
+			taskItem.Log().FatalLog(context.Background(), fmt.Sprintf("[Add Task: %s, conf: %+v, err: %v]", taskItem.GetDesc(), cfg, err))
 		}
-		taskItem.Log().WriteLog(context.Background(), fmt.Sprintf("[timer Add Task: %s, conf: %+v]", taskItem.GetDesc(), cfg))
+		taskItem.Log().WriteLog(context.Background(), fmt.Sprintf("[Add Task: %s, conf: %+v]", taskItem.GetDesc(), cfg))
 	}
 	c.Start()
 }
