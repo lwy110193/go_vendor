@@ -88,7 +88,6 @@ func Run(tasks []*TaskConfig) {
 		})
 		if err != nil {
 			taskItem.Log().FatalLog(context.Background(), fmt.Sprintf("[timer Add Task: %s, conf: %+v, err: %v]", taskItem.GetDesc(), cfg, err))
-			panic(0)
 		}
 		taskItem.Log().WriteLog(context.Background(), fmt.Sprintf("[timer Add Task: %s, conf: %+v]", taskItem.GetDesc(), cfg))
 	}
