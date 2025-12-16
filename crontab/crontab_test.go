@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/lwy110193/go_vendor/crontab"
+	mylog "github.com/lwy110193/go_vendor/log"
 )
 
 type TaskLogger struct{}
@@ -37,7 +38,7 @@ func (t *TestTask) GetName() string {
 	return t.Name
 }
 
-func (t *TestTask) Log() crontab.TaskLogInterface {
+func (t *TestTask) Log() mylog.LogInterface {
 	return &TaskLogger{}
 }
 

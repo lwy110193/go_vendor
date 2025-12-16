@@ -18,6 +18,8 @@ import (
 	"os"
 	"sync"
 	"time"
+
+	mylog "github.com/lwy110193/go_vendor/log"
 )
 
 // Config 请求配置结构体
@@ -36,11 +38,6 @@ type Config struct {
 	ClientCertFile     string            // 客户端证书文件路径
 	ClientKeyFile      string            // 客户端私钥文件路径
 	CAFile             string            // CA证书文件路径
-}
-
-type LogInterface interface {
-	WriteLog(ctx context.Context, msg string, keysAndValues ...interface{})
-	FatalLog(ctx context.Context, msg string, keysAndValues ...interface{})
 }
 
 type Logger struct {
@@ -68,7 +65,7 @@ type Response struct {
 type Client struct {
 	config        *Config
 	httpClient    *http.Client
-	log           LogInterface
+	log           mylog.LogInterface
 	proxyURLs     []string   // 代理URL列表
 	proxyStrategy string     // 代理选择策略
 	proxyWeights  []int      // 代理权重列表
@@ -78,7 +75,7 @@ type Client struct {
 }
 
 // NewClient 创建新的客户端
-func NewClient(config *Config, log LogInterface) *Client {
+func NewClient(config *Config, log mylog.LogInterface) *Client {
 	if log == nil {
 		log = defaultLogger
 	}

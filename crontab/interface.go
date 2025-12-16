@@ -7,6 +7,7 @@ import (
 	"os"
 	"time"
 
+	mylog "github.com/lwy110193/go_vendor/log"
 	"github.com/robfig/cron/v3"
 )
 
@@ -16,11 +17,6 @@ type TaskConfig struct {
 	Spec               string `yaml:"spec"`                // 任务表达式
 	ExecuteImmediately bool   `yaml:"execute_immediately"` // 是否启动时立即执行
 	Enabled            bool   `yaml:"enabled"`             // 启用状态
-}
-
-type TaskLogInterface interface {
-	WriteLog(ctx context.Context, msg string, keysAndValues ...interface{})
-	FatalLog(ctx context.Context, msg string, keysAndValues ...interface{})
 }
 
 type Logger struct {
@@ -46,7 +42,7 @@ type Task interface {
 	// Run 方法运行任务的逻辑。
 	Run(ctx context.Context) error
 
-	Log() TaskLogInterface
+	Log() mylog.LogInterface
 
 	// SetParam 设置参数
 	SetParam(param interface{}) error
