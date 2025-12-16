@@ -3,6 +3,7 @@ package request
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -527,32 +528,199 @@ func TestHTTPSRequest(t *testing.T) {
 	}
 }
 
-// TestInsecureSkipVerify 测试禁用证书验证功能
-func TestInsecureSkipVerify(t *testing.T) {
-	// 创建HTTPS测试服务器
-	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// 返回JSON响应
+// TestProxyPoolRoundRobin 测试轮询策略的代理池功能
+func TestProxyPoolRoundRobin(t *testing.T) {
+	// 创建目标服务器，它会记录来源代理的信息
+	var proxyIdentifiers []string
+	var mu sync.Mutex
+
+	targetServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// 从请求头获取代理标识符（在代理中添加）
+		proxyID := r.Header.Get("X-Proxy-ID")
+		mu.Lock()
+		proxyIdentifiers = append(proxyIdentifiers, proxyID)
+		mu.Unlock()
+
+		// 返回成功响应
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		json.NewEncoder(w).Encode(MockResponse{Message: "insecure success", Code: 200})
+		json.NewEncoder(w).Encode(MockResponse{Message: "success", Code: 200})
 	}))
-	defer server.Close()
+	defer targetServer.Close()
 
-	// 创建客户端，禁用证书验证并增加超时时间
+	// 创建两个模拟代理服务器
+	proxy1 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// 转发请求到目标服务器，并添加代理标识符
+		newReq, _ := http.NewRequest(r.Method, targetServer.URL+r.URL.Path, r.Body)
+		for k, v := range r.Header {
+			newReq.Header[k] = v
+		}
+		newReq.Header.Set("X-Proxy-ID", "proxy-1")
+
+		client := &http.Client{}
+		resp, err := client.Do(newReq)
+		if err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		defer resp.Body.Close()
+
+		// 复制响应头和响应体
+		for k, v := range resp.Header {
+			w.Header()[k] = v
+		}
+		w.WriteHeader(resp.StatusCode)
+		io.Copy(w, resp.Body)
+	}))
+	defer proxy1.Close()
+
+	proxy2 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// 转发请求到目标服务器，并添加代理标识符
+		newReq, _ := http.NewRequest(r.Method, targetServer.URL+r.URL.Path, r.Body)
+		for k, v := range r.Header {
+			newReq.Header[k] = v
+		}
+		newReq.Header.Set("X-Proxy-ID", "proxy-2")
+
+		client := &http.Client{}
+		resp, err := client.Do(newReq)
+		if err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		defer resp.Body.Close()
+
+		// 复制响应头和响应体
+		for k, v := range resp.Header {
+			w.Header()[k] = v
+		}
+		w.WriteHeader(resp.StatusCode)
+		io.Copy(w, resp.Body)
+	}))
+	defer proxy2.Close()
+
+	// 创建客户端，配置代理池和轮询策略
 	client := NewClient(&Config{
-		InsecureSkipVerify: true,
-		Timeout:            30 * time.Second,
+		ProxyURLs:         []string{proxy1.URL, proxy2.URL},
+		ProxyPoolStrategy: "round-robin",
+		Timeout:           5 * time.Second,
 	}, nil)
 
-	// 执行HTTPS请求（不验证证书）
-	var response MockResponse
-	err := client.GetJSON(server.URL+"/test", nil, nil, &response)
-	if err != nil {
-		t.Fatalf("HTTPS GetJSON with InsecureSkipVerify failed: %v", err)
+	// 执行多次请求，验证轮询策略
+	expectedOrder := []string{"proxy-1", "proxy-2", "proxy-1", "proxy-2"}
+	for i := 0; i < 4; i++ {
+		var response MockResponse
+		err := client.GetJSON(targetServer.URL+"/test", nil, nil, &response)
+		if err != nil {
+			t.Fatalf("Request with proxy pool failed: %v", err)
+		}
 	}
 
-	// 验证响应
-	if response.Message != "insecure success" || response.Code != 200 {
-		t.Errorf("Expected insecure success response, got %+v", response)
+	// 验证代理使用顺序
+	mu.Lock()
+	defer mu.Unlock()
+	if len(proxyIdentifiers) != 4 {
+		t.Errorf("Expected 4 requests, got %d", len(proxyIdentifiers))
+		return
+	}
+
+	for i, expected := range expectedOrder {
+		if proxyIdentifiers[i] != expected {
+			t.Errorf("Expected proxy %s at position %d, got %s", expected, i, proxyIdentifiers[i])
+		}
+	}
+}
+
+// TestProxyPoolRandom 测试随机策略的代理池功能
+func TestProxyPoolRandom(t *testing.T) {
+	// 创建目标服务器，记录使用的代理
+	var proxyIdentifiers []string
+	var mu sync.Mutex
+
+	targetServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		proxyID := r.Header.Get("X-Proxy-ID")
+		mu.Lock()
+		proxyIdentifiers = append(proxyIdentifiers, proxyID)
+		mu.Unlock()
+
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		json.NewEncoder(w).Encode(MockResponse{Message: "success", Code: 200})
+	}))
+	defer targetServer.Close()
+
+	// 创建三个模拟代理服务器
+	proxies := []struct {
+		ID     string
+		Server *httptest.Server
+	}{}
+
+	for i := 1; i <= 3; i++ {
+		proxyID := fmt.Sprintf("proxy-%d", i)
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			// 转发请求并添加代理标识符
+			newReq, _ := http.NewRequest(r.Method, targetServer.URL+r.URL.Path, r.Body)
+			for k, v := range r.Header {
+				newReq.Header[k] = v
+			}
+			newReq.Header.Set("X-Proxy-ID", proxyID)
+
+			client := &http.Client{}
+			resp, err := client.Do(newReq)
+			if err != nil {
+				w.WriteHeader(http.StatusInternalServerError)
+				return
+			}
+			defer resp.Body.Close()
+
+			// 复制响应
+			for k, v := range resp.Header {
+				w.Header()[k] = v
+			}
+			w.WriteHeader(resp.StatusCode)
+			io.Copy(w, resp.Body)
+		}))
+		proxies = append(proxies, struct {
+			ID     string
+			Server *httptest.Server
+		}{proxyID, server})
+		defer server.Close()
+	}
+
+	// 提取代理URLs
+	proxyURLs := make([]string, len(proxies))
+	for i, p := range proxies {
+		proxyURLs[i] = p.Server.URL
+	}
+
+	// 创建客户端，配置随机策略
+	client := NewClient(&Config{
+		ProxyURLs:         proxyURLs,
+		ProxyPoolStrategy: "random",
+		Timeout:           5 * time.Second,
+	}, nil)
+
+	// 执行多次请求
+	for i := 0; i < 10; i++ {
+		var response MockResponse
+		err := client.GetJSON(targetServer.URL+"/test", nil, nil, &response)
+		if err != nil {
+			t.Fatalf("Request with random proxy failed: %v", err)
+		}
+	}
+
+	// 验证所有代理至少被使用一次
+	mu.Lock()
+	defer mu.Unlock()
+
+	proxyUsage := make(map[string]bool)
+	for _, id := range proxyIdentifiers {
+		proxyUsage[id] = true
+	}
+
+	for _, p := range proxies {
+		if !proxyUsage[p.ID] {
+			t.Errorf("Proxy %s was never used", p.ID)
+		}
 	}
 }

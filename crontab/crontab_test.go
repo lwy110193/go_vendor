@@ -41,8 +41,9 @@ func (t *TestTask) Log() crontab.TaskLogInterface {
 	return &TaskLogger{}
 }
 
-func (t *TestTask) Run() {
-	t.Log().WriteLog(context.Background(), fmt.Sprintf("%s[%s] runing", t.GetDesc(), t.GetName()))
+func (t *TestTask) Run(ctx context.Context) error {
+	t.Log().WriteLog(ctx, fmt.Sprintf("%s[%s] runing", t.GetDesc(), t.GetName()))
+	return nil
 }
 
 func TestAddTask(t *testing.T) {

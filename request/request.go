@@ -10,11 +10,13 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"math/rand"
 	"mime/multipart"
 	"net"
 	"net/http"
 	"net/url"
 	"os"
+	"sync"
 	"time"
 )
 
@@ -26,6 +28,9 @@ type Config struct {
 	Headers            map[string]string // 全局请求头
 	Context            context.Context   // 上下文，可用于取消请求
 	ProxyURL           string            // 代理URL，如 "http://127.0.0.1:8080"
+	ProxyURLs          []string          // 代理URL列表，用于代理池轮询
+	ProxyPoolStrategy  string            // 代理池策略: "round-robin"(默认), "random", "weighted"
+	ProxyWeights       []int             // 代理权重列表，与ProxyURLs一一对应，仅在weighted策略下使用
 	InsecureSkipVerify bool              // 是否跳过TLS证书验证（不安全，仅用于测试环境）
 	TLSConfig          *tls.Config       // 自定义TLS配置
 	ClientCertFile     string            // 客户端证书文件路径
@@ -61,9 +66,15 @@ type Response struct {
 
 // Client 请求客户端
 type Client struct {
-	config     *Config
-	httpClient *http.Client
-	log        LogInterface
+	config        *Config
+	httpClient    *http.Client
+	log           LogInterface
+	proxyURLs     []string   // 代理URL列表
+	proxyStrategy string     // 代理选择策略
+	proxyWeights  []int      // 代理权重列表
+	currentIndex  int        // 当前轮询索引
+	random        *rand.Rand // 随机数生成器
+	mu            sync.Mutex // 互斥锁，保护并发访问
 }
 
 // NewClient 创建新的客户端
@@ -80,6 +91,9 @@ func NewClient(config *Config, log LogInterface) *Client {
 			Headers:            make(map[string]string),
 			Context:            context.Background(),
 			ProxyURL:           "",
+			ProxyURLs:          nil,
+			ProxyPoolStrategy:  "round-robin",
+			ProxyWeights:       nil,
 			InsecureSkipVerify: false,
 		}
 	} else {
@@ -146,6 +160,7 @@ func NewClient(config *Config, log LogInterface) *Client {
 
 	// 设置代理
 	if config.ProxyURL != "" {
+		// 单个代理优先级高于代理池
 		proxyURL, err := url.Parse(config.ProxyURL)
 		if err != nil {
 			// panic(fmt.Sprintf("Warning: Invalid proxy URL: %v\n", err))
@@ -160,12 +175,45 @@ func NewClient(config *Config, log LogInterface) *Client {
 		Timeout:   config.Timeout,
 	}
 
-	return &Client{
-		config:     config,
-		httpClient: httpClient,
-		log:        log,
+	// 初始化代理池相关字段
+	proxyWeights := config.ProxyWeights
+	// 如果提供了权重但长度不匹配，修正权重长度
+	if len(proxyWeights) > 0 && len(proxyWeights) != len(config.ProxyURLs) {
+		log.WriteLog(config.Context, "Warning: ProxyWeights length (%d) doesn't match ProxyURLs length (%d), using default weights\n",
+			len(proxyWeights), len(config.ProxyURLs))
+		proxyWeights = nil
+	}
+	// 如果没有提供权重，默认为1
+	if proxyWeights == nil && len(config.ProxyURLs) > 0 {
+		proxyWeights = make([]int, len(config.ProxyURLs))
+		for i := range proxyWeights {
+			proxyWeights[i] = 1
+		}
 	}
 
+	// 验证策略是否有效
+	strategy := config.ProxyPoolStrategy
+	validStrategies := map[string]bool{
+		"round-robin": true,
+		"random":      true,
+		"weighted":    true,
+	}
+	if !validStrategies[strategy] {
+		log.WriteLog(config.Context, "Warning: Invalid proxy strategy '%s', using 'round-robin'\n", strategy)
+		strategy = "round-robin"
+	}
+
+	return &Client{
+		config:        config,
+		httpClient:    httpClient,
+		log:           log,
+		proxyURLs:     config.ProxyURLs,
+		proxyStrategy: strategy,
+		proxyWeights:  proxyWeights,
+		currentIndex:  0,
+		random:        rand.New(rand.NewSource(time.Now().UnixNano())),
+		mu:            sync.Mutex{},
+	}
 }
 
 // setRequestHeaders 设置请求头
@@ -179,6 +227,56 @@ func (c *Client) setRequestHeaders(req *http.Request) {
 	if req.Header.Get("Content-Type") == "" && req.Method != "GET" && req.Body != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}
+}
+
+// getNextProxy 根据策略获取下一个代理URL
+func (c *Client) getNextProxy() (*url.URL, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	if len(c.proxyURLs) == 0 {
+		return nil, nil // 无代理
+	}
+
+	var proxyURL string
+
+	switch c.proxyStrategy {
+	case "random":
+		// 随机选择
+		index := c.random.Intn(len(c.proxyURLs))
+		proxyURL = c.proxyURLs[index]
+
+	case "weighted":
+		// 加权随机选择
+		totalWeight := 0
+		for _, weight := range c.proxyWeights {
+			totalWeight += weight
+		}
+
+		randomWeight := c.random.Intn(totalWeight) + 1
+		runningWeight := 0
+
+		for i, weight := range c.proxyWeights {
+			runningWeight += weight
+			if randomWeight <= runningWeight {
+				proxyURL = c.proxyURLs[i]
+				break
+			}
+		}
+
+	case "round-robin", "":
+		// 轮询选择
+		proxyURL = c.proxyURLs[c.currentIndex]
+		c.currentIndex = (c.currentIndex + 1) % len(c.proxyURLs)
+	}
+
+	// 解析代理URL
+	parsedURL, err := url.Parse(proxyURL)
+	if err != nil {
+		return nil, fmt.Errorf("invalid proxy URL: %w", err)
+	}
+
+	return parsedURL, nil
 }
 
 // parseResponse 解析响应
@@ -256,8 +354,28 @@ func (c *Client) Do(req *http.Request) (*Response, error) {
 			req.Body = reqBody
 		}
 
+		// 创建一个新的客户端副本，以便动态设置代理
+		reqClient := *c.httpClient
+
+		// 检查是否需要从代理池中选择代理
+		if len(c.proxyURLs) > 0 && c.config.ProxyURL == "" {
+			// 从代理池中获取下一个代理
+			proxyURL, err := c.getNextProxy()
+			if err != nil {
+				lastErr = fmt.Errorf("failed to get proxy: %w", err)
+				retryCount++
+				continue
+			}
+			if proxyURL != nil {
+				// 创建一个新的Transport副本并设置代理
+				reqTransport := *reqClient.Transport.(*http.Transport)
+				reqTransport.Proxy = http.ProxyURL(proxyURL)
+				reqClient.Transport = &reqTransport
+			}
+		}
+
 		// 执行请求
-		resp, err := c.httpClient.Do(req)
+		resp, err := reqClient.Do(req)
 
 		// 处理错误
 		if err != nil {
