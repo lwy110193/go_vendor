@@ -52,10 +52,10 @@ func TestAddTask(t *testing.T) {
 
 	taskConfig := []*crontab.TaskConfig{
 		{
-			Name:               "test_task",
-			Enabled:            true,
-			ExecuteImmediately: true,
-			Spec:               "*/5 * * * * *",
+			Name:        "test_task",
+			Enabled:     true,
+			Immediately: true,
+			Spec:        "*/5 * * * * *",
 		},
 	}
 

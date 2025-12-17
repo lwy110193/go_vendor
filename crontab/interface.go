@@ -13,10 +13,10 @@ import (
 
 // TaskConfig 任务配置
 type TaskConfig struct {
-	Name               string `yaml:"name"`                // 任务名称
-	Spec               string `yaml:"spec"`                // 任务表达式
-	ExecuteImmediately bool   `yaml:"execute_immediately"` // 是否启动时立即执行
-	Enabled            bool   `yaml:"enabled"`             // 启用状态
+	Name        string `yaml:"name"`        // 任务名称
+	Spec        string `yaml:"spec"`        // 任务表达式
+	Immediately bool   `yaml:"immediately"` // 是否启动时立即执行
+	Enabled     bool   `yaml:"enabled"`     // 启用状态
 }
 
 type Logger struct {
@@ -75,7 +75,7 @@ func Run(tasks []*TaskConfig) {
 		if !cfg.Enabled {
 			continue
 		}
-		if cfg.ExecuteImmediately {
+		if cfg.Immediately {
 			taskItem.Log().WriteLog(context.Background(), fmt.Sprintf("%sexecute immediately", time.Now().Format("2006-01-02 15:04:05")))
 			go func(t Task) {
 				if err := t.Run(context.Background()); err != nil {
