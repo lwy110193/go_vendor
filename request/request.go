@@ -81,26 +81,20 @@ func NewClient(config *Config, log mylog.LogInterface) *Client {
 	}
 
 	if config == nil {
-		config = &Config{
-			Timeout:            30 * time.Second,
-			RetryCount:         0,
-			RetryDelay:         1 * time.Second,
-			Headers:            make(map[string]string),
-			Context:            context.Background(),
-			ProxyURL:           "",
-			ProxyURLs:          nil,
-			ProxyPoolStrategy:  "round-robin",
-			ProxyWeights:       nil,
-			InsecureSkipVerify: false,
-		}
-	} else {
-		// 确保Headers和Context不为nil
-		if config.Headers == nil {
-			config.Headers = make(map[string]string)
-		}
-		if config.Context == nil {
-			config.Context = context.Background()
-		}
+		config = &Config{Timeout: 30 * time.Second}
+	}
+	if config.ProxyPoolStrategy == "" {
+		config.ProxyPoolStrategy = "round-robin"
+	}
+	if config.Context == nil {
+		config.Context = context.Background()
+	}
+	if config.Headers == nil {
+		config.Headers = make(map[string]string)
+	}
+
+	if config.ProxyPoolStrategy == "weighted" && len(config.ProxyWeights) != len(config.ProxyURLs) {
+		log.FatalLog(config.Context, "Warning: Proxy weights length must match ProxyURLs length\n")
 	}
 
 	// 创建TLS配置
