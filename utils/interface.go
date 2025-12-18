@@ -79,64 +79,45 @@ func Truncate[T any](list *[]T, length int) (tList []T) {
 	return
 }
 
-var m = map[string]string{
-	"A": "_a",
-	"B": "_b",
-	"C": "_c",
-	"D": "_d",
-	"E": "_e",
-	"F": "_f",
-	"G": "_g",
-	"H": "_h",
-	"I": "_i",
-	"J": "_j",
-	"K": "_k",
-	"L": "_l",
-	"M": "_m",
-	"N": "_n",
-	"O": "_o",
-	"P": "_p",
-	"Q": "_q",
-	"R": "_r",
-	"S": "_s",
-	"T": "_t",
-	"U": "_u",
-	"V": "_v",
-	"W": "_w",
-	"X": "_x",
-	"Y": "_y",
-	"Z": "_z",
-}
-
 // CamelStrConv 驼峰字符串 转 下划线字符串
-func CamelStrConv(str string) (newStr string) {
-	//re := regexp.MustCompile("([a-z0-9])([A-Z])")
-	//return strings.ToLower(re.ReplaceAllString(str, "${1}_${2}"))
-
-	//re := re2.MustCompile("([a-z0-9])([A-Z])")
-	//return strings.ToLower(re.ReplaceAllString(str, "${1}_${2}"))
-
-	if str == "ID" {
+func CamelStrConv(str string) string {
+	// 处理特殊情况
+	switch str {
+	case "ID":
 		return "id"
-	} else if str == "UpdatedAt" {
+	case "UpdatedAt":
 		return "updated_at"
-	} else if str == "CreatedAt" {
+	case "CreatedAt":
 		return "created_at"
 	}
 
-	var tmp string
-	for _, c := range str {
-		tmp = string(c)
-		if r, ok := m[tmp]; ok {
-			newStr += r
+	// 使用strings.Builder优化字符串拼接性能
+	var builder strings.Builder
+	builder.Grow(len(str) * 2) // 预分配足够的空间，最多可能翻倍长度
+
+	for i, c := range str {
+		// 直接判断大写字母范围，避免map查找
+		if c >= 'A' && c <= 'Z' {
+			// 不是第一个字符时添加下划线
+			if i > 0 {
+				builder.WriteByte('_')
+			}
+			// 转换为小写字母
+			builder.WriteRune(c + 32)
 		} else {
-			newStr += tmp
+			builder.WriteRune(c)
 		}
 	}
-	if len(newStr) > 0 && string(newStr[0]) == "_" {
-		newStr = newStr[1:]
+
+	// 构建结果字符串
+	result := builder.String()
+
+	// 处理特殊情况：如果结果以_开头，去掉开头的_
+	if len(result) > 0 && result[0] == '_' {
+		return result[1:]
 	}
-	return
+
+	return result
 }
 
 // ToInterfaceSlice 转换为interface切片
@@ -238,7 +219,7 @@ func DataConvert(from interface{}, to interface{}) {
 
 }
 
-// ConvStructToMap 结构体转map（包含内嵌结构体处理）
+// ConvStructToMap 结构体转map，只处理一级
 func ConvStructToMap(data interface{}, result MI) {
 	dataType := reflect.TypeOf(data)
 	dataValue := reflect.ValueOf(data)
