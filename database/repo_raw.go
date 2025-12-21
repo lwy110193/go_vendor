@@ -43,7 +43,7 @@ func (r *BaseRepo) Transaction(ctx context.Context, fun func(tx *gorm.DB) error)
 
 // UpdateOrInsert 更新或插入；更新数量为0时插入，需指定更新条件字段
 func (r *BaseRepo) UpdateOrInsert(ctx context.Context, data schema.Tabler, updateWhereField []string, ignoreUpdateField []string) (err error) {
-	if data.TableName() == "" || len(updateWhereField) == 0 {
+	if len(updateWhereField) == 0 {
 		return
 	}
 
@@ -165,7 +165,7 @@ type CaseWhenThen struct {
 // UpdateInBatchForStruct 批量更新数据
 // caseWhenField 是需要进行case when then 处理的字段
 // ignoreUpdateField 是不需要进行更新的字段
-func (r *BaseRepo) UpdateInBatchForStruct(ctx context.Context, tableName string, list []interface{}, where utils.MI, caseWhenField []string, ignoreUpdateField []string) (err error) {
+func (r *BaseRepo) UpdateInBatchForStruct(ctx context.Context, table schema.Tabler, list []interface{}, where utils.MI, caseWhenField []string, ignoreUpdateField []string) (err error) {
 	var dataList []utils.MI
 	for _, item := range list {
 		itemMapInfo := utils.MI{}
@@ -173,13 +173,13 @@ func (r *BaseRepo) UpdateInBatchForStruct(ctx context.Context, tableName string,
 		dataList = append(dataList, itemMapInfo)
 	}
 
-	return r.UpdateInBatchForMap(ctx, tableName, dataList, where, caseWhenField, ignoreUpdateField)
+	return r.UpdateInBatchForMap(ctx, table, dataList, where, caseWhenField, ignoreUpdateField)
 }
 
 // UpdateInBatchForMap 批量更新数据
 // caseWhenField 是需要进行case when then 处理的字段
 // ignoreUpdateField 是不需要进行更新的字段
-func (r *BaseRepo) UpdateInBatchForMap(ctx context.Context, tableName string, dataList []utils.MI, where utils.MI, caseWhenField []string, ignoreUpdateField []string) (err error) {
+func (r *BaseRepo) UpdateInBatchForMap(ctx context.Context, table schema.Tabler, dataList []utils.MI, where utils.MI, caseWhenField []string, ignoreUpdateField []string) (err error) {
 	if len(dataList) == 0 {
 		return
 	}
@@ -233,7 +233,7 @@ func (r *BaseRepo) UpdateInBatchForMap(ctx context.Context, tableName string, da
 			}
 		}
 
-		_sql := fmt.Sprintf("update `%v` set", tableName)
+		_sql := fmt.Sprintf("update `%v` set", table.TableName())
 		var params []interface{}
 		for field, caseList := range fieldCaseMap {
 			_sql += fmt.Sprintf(" `%v`= case", field)
