@@ -63,26 +63,29 @@ func ParseWhere(where utils.MI) (whereStr string, params []interface{}) {
 					params = append(params, s.Index(1).Interface(), s.Index(2).Interface())
 				} else if val0 == DCTypeIn {
 					if s.Len() > 1 {
-						whereStrBuilder.WriteString(fmt.Sprintf(" and %v in(", fieldDeal(field)))
-						for i := 1; i < s.Len(); i++ {
-							whereStrBuilder.WriteString("?,")
+						whereStrBuilder.WriteString(fmt.Sprintf(" and %v in(?", fieldDeal(field)))
+						params = append(params, s.Index(1).Interface())
+						for i := 2; i < s.Len(); i++ {
+							whereStrBuilder.WriteString(",?")
 							params = append(params, s.Index(i).Interface())
 						}
 						whereStrBuilder.WriteString(")")
 					}
 				} else if val0 == DCTypeNotIn {
 					if s.Len() > 1 {
-						whereStrBuilder.WriteString(fmt.Sprintf(" and %v not in(", fieldDeal(field)))
-						for i := 1; i < s.Len(); i++ {
-							whereStrBuilder.WriteString("?,")
+						whereStrBuilder.WriteString(fmt.Sprintf(" and %v not in(?", fieldDeal(field)))
+						params = append(params, s.Index(1).Interface())
+						for i := 2; i < s.Len(); i++ {
+							whereStrBuilder.WriteString(",?")
 							params = append(params, s.Index(i).Interface())
 						}
 						whereStrBuilder.WriteString(")")
 					}
 				} else {
-					whereStrBuilder.WriteString(fmt.Sprintf(" and %v in(", fieldDeal(field)))
-					for i := 0; i < s.Len(); i++ {
-						whereStrBuilder.WriteString("?,")
+					whereStrBuilder.WriteString(fmt.Sprintf(" and %v not in(?", fieldDeal(field)))
+					params = append(params, s.Index(0).Interface())
+					for i := 1; i < s.Len(); i++ {
+						whereStrBuilder.WriteString(",?")
 						params = append(params, s.Index(i).Interface())
 					}
 					whereStrBuilder.WriteString(")")
