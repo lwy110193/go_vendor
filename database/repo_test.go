@@ -6,7 +6,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/lwy110193/db_define/stock/models"
 	"github.com/lwy110193/go_vendor/database"
+	"github.com/lwy110193/go_vendor/log"
 	"github.com/lwy110193/go_vendor/utils"
 	"gorm.io/driver/mysql"
 	"gorm.io/gorm"
@@ -105,6 +107,116 @@ func Test_CreateTableTe(t *testing.T) {
 	err := db.AutoMigrate(&TeTable{})
 	if err != nil {
 		t.Errorf("AutoMigrate() error = %v", err)
+		return
+	}
+}
+
+type StockInfoRepo struct {
+	database.BaseRepo
+	logger log.LogInterface
+}
+
+// NewStockInfoRepo 创建新的股票信息仓库
+func NewStockInfoRepo(db *gorm.DB, logger log.LogInterface) *StockInfoRepo {
+	return &StockInfoRepo{
+		BaseRepo: database.BaseRepo{
+			Db:    db,
+			Model: &models.StockInfo{},
+		},
+		logger: logger,
+	}
+}
+
+type Stock struct {
+	StockId     string `json:"stock_id" gorm:"column:stock_id;type:char(30);comment:股票ID"`
+	DisplayName string `json:"display_name" gorm:"column:display_name;type:char(100);comment:股票名称"`
+}
+
+func TestCreateInBatch(t *testing.T) {
+	repo := NewStockInfoRepo(db, nil)
+
+	var resultList []*Stock
+	count, err := repo.Find(context.Background(), &resultList, utils.MI{}, nil, "stock_id", "display_name")
+	if err != nil {
+		t.Errorf("Find() error = %v", err)
+		return
+	}
+	fmt.Printf("count = %v\n", count)
+	fmt.Printf("resultList = %#v\n", resultList)
+
+	var findOne models.StockInfo
+	if err = repo.FindOne(context.Background(), &findOne, utils.MI{}); err != nil {
+		t.Errorf("FindOne() error = %v", err)
+		return
+	}
+	fmt.Printf("findOne = %#v\n", findOne)
+
+	time := time.Now()
+	list := []*models.StockInfo{
+		{
+			StockId:     utils.RandNumCode(10),
+			DisplayName: utils.RandNumCode(10),
+			StartDate:   time,
+			EndDate:     time,
+		},
+		{
+			StockId:     utils.RandNumCode(10),
+			DisplayName: utils.RandNumCode(10),
+			StartDate:   time,
+			EndDate:     time,
+		},
+	}
+
+	if err = repo.CreateBatch(context.Background(), list, 100); err != nil {
+		t.Errorf("CreateBatch() error = %v", err)
+		return
+	}
+
+	one := &models.StockInfo{
+		StockId:     utils.RandNumCode(10),
+		DisplayName: utils.RandNumCode(10),
+		StartDate:   time,
+		EndDate:     time,
+	}
+	if err = repo.Create(context.Background(), one); err != nil {
+		t.Errorf("Create() error = %v", err)
+		return
+	}
+
+	sql := "select * from stock_info where stock_id = ?"
+	var resultList2 []*models.StockInfo
+	if err = repo.Raw(context.Background(), &resultList2, sql, "3996601512"); err != nil {
+		t.Errorf("Raw() error = %v", err)
+		return
+	}
+	fmt.Printf("resultList2 = %#v\n", resultList2)
+
+	if err = repo.Exec(context.Background(), "update stock_info set display_name = ? where stock_id = ?", "新名称", "3996601512"); err != nil {
+		t.Errorf("Exec() error = %v", err)
+		return
+	}
+
+	// repo.UpdateInBatchForStruct(context.Background(), list, utils.MI{
+	// 	"stock_id": one.StockId,
+	// }, []string{"display_name"}, []string{"start_date", "end_date"}); err != nil {
+	// 	t.Errorf("UpdateInBatchForStruct() error = %v", err)
+	// 	return
+	// }
+
+	if err = repo.Transaction(context.Background(), func(tx *gorm.DB) error {
+		newOne := &models.StockInfo{
+			StockId:     utils.RandNumCode(10),
+			DisplayName: "new_one",
+			StartDate:   time,
+			EndDate:     time,
+		}
+		if err = tx.Create(newOne).Error; err != nil {
+			return err
+		}
+		return nil
+		// return errors.New("dont create new_one")
+	}); err != nil {
+		t.Errorf("Transaction() error = %v", err)
 		return
 	}
 }
