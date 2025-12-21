@@ -9,24 +9,22 @@ import (
 	"github.com/lwy110193/go_vendor/utils"
 )
 
-type DbConditionType string
-
 const (
-	DbConditionTypeGt  DbConditionType = "GT"
-	DbConditionTypeLt  DbConditionType = "LT"
-	DbConditionTypeGte DbConditionType = "GTE"
-	DbConditionTypeLte DbConditionType = "LTE"
-	DbConditionTypeEq  DbConditionType = "EQ"
-	DbConditionTypeNeq DbConditionType = "NEQ"
+	DbConditionTypeGt  string = "GT"
+	DbConditionTypeLt  string = "LT"
+	DbConditionTypeGte string = "GTE"
+	DbConditionTypeLte string = "LTE"
+	DbConditionTypeEq  string = "EQ"
+	DbConditionTypeNeq string = "NEQ"
 
-	DbConditionTypeLike    DbConditionType = "LIKE"
-	DbConditionTypeBetween DbConditionType = "BETWEEN"
-	DbConditionTypeIn      DbConditionType = "IN"
-	DbConditionTypeNotIn   DbConditionType = "NOT_IN"
+	DbConditionTypeLike    string = "LIKE"
+	DbConditionTypeBetween string = "BETWEEN"
+	DbConditionTypeIn      string = "IN"
+	DbConditionTypeNotIn   string = "NOT_IN"
 )
 
 // whereCondition 条件运算符
-var whereCondition = map[DbConditionType]string{
+var whereCondition = map[string]string{
 	DbConditionTypeGt:  ">",
 	DbConditionTypeLt:  "<",
 	DbConditionTypeGte: ">=",
@@ -34,7 +32,7 @@ var whereCondition = map[DbConditionType]string{
 	DbConditionTypeEq:  "=",
 	DbConditionTypeNeq: "!=",
 }
-var conditionList = []DbConditionType{
+var conditionList = []string{
 	DbConditionTypeGt,
 	DbConditionTypeLt,
 	DbConditionTypeGte,
@@ -52,17 +50,17 @@ func ParseWhere(where utils.MI) (whereStr string, params []interface{}) {
 			s := reflect.ValueOf(value)
 			if s.Len() > 0 {
 				val0 := fmt.Sprintf("%v", s.Index(0).Interface())
-				if s.Len() == 2 && DbConditionType(val0) == DbConditionTypeLike {
+				if s.Len() == 2 && val0 == DbConditionTypeLike {
 					whereStrBuilder.WriteString(fmt.Sprintf(" and %v like '%%%v%%'", fieldDeal(field), s.Index(1).Interface()))
-				} else if s.Len() == 2 && DbConditionType(val0) == DbConditionTypeBetween {
+				} else if s.Len() == 2 && val0 == DbConditionTypeBetween {
 					whereStrBuilder.WriteString(fmt.Sprintf(" and %v", s.Index(1).Interface()))
-				} else if s.Len() == 2 && utils.InList(DbConditionType(val0), conditionList) {
-					whereStrBuilder.WriteString(fmt.Sprintf(" and %v %v ?", fieldDeal(field), whereCondition[DbConditionType(val0)]))
+				} else if s.Len() == 2 && utils.InList(val0, conditionList) {
+					whereStrBuilder.WriteString(fmt.Sprintf(" and %v %v ?", fieldDeal(field), whereCondition[val0]))
 					params = append(params, s.Index(1).Interface())
-				} else if s.Len() == 3 && DbConditionType(val0) == DbConditionTypeBetween {
+				} else if s.Len() == 3 && val0 == DbConditionTypeBetween {
 					whereStrBuilder.WriteString(fmt.Sprintf(" and %v between ? and ?", fieldDeal(field)))
 					params = append(params, s.Index(1).Interface(), s.Index(2).Interface())
-				} else if DbConditionType(val0) == DbConditionTypeIn {
+				} else if val0 == DbConditionTypeIn {
 					if s.Len() > 1 {
 						whereStrBuilder.WriteString(fmt.Sprintf(" and %v in(", fieldDeal(field)))
 						for i := 1; i < s.Len(); i++ {
@@ -71,7 +69,7 @@ func ParseWhere(where utils.MI) (whereStr string, params []interface{}) {
 						}
 						whereStrBuilder.WriteString(")")
 					}
-				} else if DbConditionType(val0) == DbConditionTypeNotIn {
+				} else if val0 == DbConditionTypeNotIn {
 					if s.Len() > 1 {
 						whereStrBuilder.WriteString(fmt.Sprintf(" and %v not in(", fieldDeal(field)))
 						for i := 1; i < s.Len(); i++ {
