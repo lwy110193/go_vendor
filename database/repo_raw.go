@@ -187,7 +187,7 @@ func (r *BaseRepo) UpdateInBatchForMap(ctx context.Context, table schema.Tabler,
 		return errors.New("caseWhenField error")
 	}
 
-	ignoreUpdateField = append(ignoreUpdateField, "id", "created_at") // id不进行更新
+	ignoreUpdateField = append(ignoreUpdateField, "id", "created_at", "deleted_at") // id不进行更新
 	whereStr, WhereParams := ParseWhere(where)
 
 	nowTime := time.Now()
