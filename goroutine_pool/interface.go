@@ -94,7 +94,7 @@ func (p *funcPool) Invoke(i interface{}) error {
 	return p.pool.Invoke(i)
 }
 
-func (p *funcPool) Waiting() {
+func (p *funcPool) Wait() {
 	p.wg.Wait()
 }
 

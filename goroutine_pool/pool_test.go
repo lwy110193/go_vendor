@@ -104,7 +104,7 @@ func TestGoroutinePoolFunc1(t *testing.T) {
 	}
 
 	// 等待所有任务完成
-	poolFunc.Waiting()
+	poolFunc.Wait()
 	eList := poolFunc.ErrList()
 	if len(eList) != 34 {
 		t.Errorf("期望34个错误，实际%d个", len(eList))
