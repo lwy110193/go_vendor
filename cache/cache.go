@@ -103,3 +103,10 @@ func NewRedisClient(addr, password string, db int) *redis.Client {
 		DB:       db,
 	})
 }
+
+// NewRedisCacheWithClient 创建Redis缓存实例，使用已有的Redis客户端
+func NewRedisCacheWithClient(client *redis.Client) *RedisCache {
+	return &RedisCache{
+		client: client,
+	}
+}
