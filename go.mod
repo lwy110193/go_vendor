@@ -5,7 +5,7 @@ go 1.25.0
 require (
 	github.com/dgrijalva/jwt-go v3.2.0+incompatible
 	github.com/gin-gonic/gin v1.11.0
-	github.com/go-redis/redis/v8 v8.11.5
+	github.com/redis/go-redis/v9 v9.17.2
 	github.com/google/uuid v1.6.0
 	github.com/lwy110193/db_define v0.0.0-20251220190558-5b9719b0987b
 	github.com/panjf2000/ants/v2 v2.11.3
@@ -69,6 +69,7 @@ require (
 	github.com/prometheus/procfs v0.17.0 // indirect
 	github.com/quic-go/qpack v0.5.1 // indirect
 	github.com/quic-go/quic-go v0.54.0 // indirect
+	github.com/redis/go-redis/v9 v9.17.2 // indirect
 	github.com/twitchyliquid64/golang-asm v0.15.1 // indirect
 	github.com/ugorji/go/codec v1.3.0 // indirect
 	go.opentelemetry.io/auto/sdk v1.1.0 // indirect
@@ -89,3 +90,4 @@ require (
 	google.golang.org/protobuf v1.36.9 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
+

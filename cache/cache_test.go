@@ -10,12 +10,10 @@ import (
 
 // 测试Redis缓存的基本操作
 func TestRedisCacheBasicOperations(t *testing.T) {
-	// 创建Redis客户端，使用与之前测试相同的配置
-	client := NewRedisClient("192.168.3.42:6379", "redis_MK8zA6", 0)
-	defer client.Close()
-
 	// 创建缓存实例
-	cache := NewRedisCache(client)
+	cache := NewRedisCache("192.168.3.42:6379", "redis_MK8zA6", 0)
+	defer cache.Close()
+
 	ctx := context.Background()
 
 	// 测试数据
@@ -56,10 +54,9 @@ func TestRedisCacheBasicOperations(t *testing.T) {
 
 // 测试缓存过期功能
 func TestRedisCacheExpiration(t *testing.T) {
-	client := NewRedisClient("192.168.3.42:6379", "redis_MK8zA6", 0)
-	defer client.Close()
+	cache := NewRedisCache("192.168.3.42:6379", "redis_MK8zA6", 0)
+	defer cache.Close()
 
-	cache := NewRedisCache(client)
 	ctx := context.Background()
 
 	key := "expiration_test_key"
@@ -88,10 +85,9 @@ func TestRedisCacheExpiration(t *testing.T) {
 
 // 测试缓存复杂数据类型
 func TestRedisCacheComplexTypes(t *testing.T) {
-	client := NewRedisClient("192.168.3.42:6379", "redis_MK8zA6", 0)
-	defer client.Close()
+	cache := NewRedisCache("192.168.3.42:6379", "redis_MK8zA6", 0)
+	defer cache.Close()
 
-	cache := NewRedisCache(client)
 	ctx := context.Background()
 
 	// 测试结构体类型

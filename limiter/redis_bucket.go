@@ -2,170 +2,188 @@ package limiter
 
 import (
 	"context"
-	"fmt"
+	"errors"
 	"time"
 
-	"github.com/go-redis/redis/v8"
+	"github.com/redis/go-redis/v9"
 )
 
 // RedisBucket 基于Redis的令牌桶限流器
 type RedisBucket struct {
-	client *redis.Client
-	config *Config
-	// Lua脚本，用于原子性操作令牌桶
-	takeScript  *redis.Script
-	takeNScript *redis.Script
+	client     *redis.Client
+	key        string
+	rate       float64
+	capacity   int64
+	replenish  chan struct{}
+	stop       chan struct{}
 }
 
-// NewRedisBucket 创建Redis令牌桶限流器
-func NewRedisBucket(client *redis.Client, config *Config) *RedisBucket {
-	if config == nil {
-		config = NewDefaultConfig()
+// NewRedisBucket 创建一个新的Redis令牌桶限流器
+func NewRedisBucket(client *redis.Client, key string, rate float64, capacity int64) *RedisBucket {
+	bucket := &RedisBucket{
+		client:    client,
+		key:       key,
+		rate:      rate,
+		capacity:  capacity,
+		replenish: make(chan struct{}),
+		stop:      make(chan struct{}),
 	}
 
 	// 初始化Lua脚本
-	takeScript := redis.NewScript(`
-		local key = KEYS[1]
-		local rate = tonumber(ARGV[1])
-		local burst = tonumber(ARGV[2])
-		local now = tonumber(ARGV[3])
-		local ttl = tonumber(ARGV[4])
+	bucket.initLuaScripts()
 
-		-- 获取当前令牌桶状态
-		local current = redis.call('HMGET', key, 'last_refill_time', 'tokens')
-		local lastRefillTime = tonumber(current[1]) or now
-		local tokens = tonumber(current[2]) or burst
-
-		-- 计算新的令牌数
-		local elapsed = now - lastRefillTime
-		local newTokens = tokens + elapsed * rate / 1000.0
-
-		-- 限制最大令牌数
-		if newTokens > burst then
-			newTokens = burst
-		end
-
-		-- 尝试消耗1个令牌
-		local allowed = newTokens >= 1
-		if allowed then
-			newTokens = newTokens - 1
-		end
-
-		-- 更新令牌桶状态
-		redis.call('HMSET', key, 'last_refill_time', now, 'tokens', newTokens)
-		redis.call('EXPIRE', key, ttl)
-
-		return {allowed, newTokens}
-	`)
-
-	takeNScript := redis.NewScript(`
-		local key = KEYS[1]
-		local rate = tonumber(ARGV[1])
-		local burst = tonumber(ARGV[2])
-		local now = tonumber(ARGV[3])
-		local ttl = tonumber(ARGV[4])
-		local n = tonumber(ARGV[5])
-
-		-- 获取当前令牌桶状态
-		local current = redis.call('HMGET', key, 'last_refill_time', 'tokens')
-		local lastRefillTime = tonumber(current[1]) or now
-		local tokens = tonumber(current[2]) or burst
-
-		-- 计算新的令牌数
-		local elapsed = now - lastRefillTime
-		local newTokens = tokens + elapsed * rate / 1000.0
-
-		-- 限制最大令牌数
-		if newTokens > burst then
-			newTokens = burst
-		end
-
-		-- 尝试消耗n个令牌
-		local allowed = newTokens >= n
-		if allowed then
-			newTokens = newTokens - n
-		end
-
-		-- 更新令牌桶状态
-		redis.call('HMSET', key, 'last_refill_time', now, 'tokens', newTokens)
-		redis.call('EXPIRE', key, ttl)
-
-		return {allowed, newTokens}
-	`)
-
-	return &RedisBucket{
-		client:      client,
-		config:      config,
-		takeScript:  takeScript,
-		takeNScript: takeNScript,
-	}
+	return bucket
 }
 
-// Allow 判断是否允许通过
-func (r *RedisBucket) Allow(ctx context.Context, key string) (bool, int64, error) {
-	return r.AllowN(ctx, key, 1)
+// 初始化Lua脚本
+func (b *RedisBucket) initLuaScripts() {
+	// 定义获取令牌的Lua脚本
+	allowScript := `
+	local rate = tonumber(ARGV[1])
+	local capacity = tonumber(ARGV[2])
+	local now = tonumber(ARGV[3])
+	local tokens = tonumber(ARGV[4])
+	local key = KEYS[1]
+	local lastRefillTime = key .. ":last_refill"
+
+	local last = tonumber(redis.call("get", lastRefillTime) or now)
+	local delta = (now - last) / 1000 * rate
+	local currentTokens = math.min(capacity, (tonumber(redis.call("get", key) or capacity) + delta))
+
+	local allowed = 0
+	if currentTokens >= tokens then
+		allowed = 1
+		currentTokens = currentTokens - tokens
+	end
+
+	redis.call("set", key, currentTokens)
+	redis.call("set", lastRefillTime, now)
+	redis.call("expire", key, 86400) -- 24小时过期
+	redis.call("expire", lastRefillTime, 86400)
+
+	return {allowed, currentTokens}
+	`
+
+	// 注册Lua脚本
+	b.client.ScriptLoad(context.Background(), allowScript)
+
+	// 定义获取多令牌的Lua脚本
+	allowNScript := `
+	local rate = tonumber(ARGV[1])
+	local capacity = tonumber(ARGV[2])
+	local now = tonumber(ARGV[3])
+	local tokens = tonumber(ARGV[4])
+	local key = KEYS[1]
+	local lastRefillTime = key .. ":last_refill"
+
+	local last = tonumber(redis.call("get", lastRefillTime) or now)
+	local delta = (now - last) / 1000 * rate
+	local currentTokens = math.min(capacity, (tonumber(redis.call("get", key) or capacity) + delta))
+
+	local allowed = tokens <= currentTokens and tokens or 0
+	local remaining = currentTokens
+
+	if allowed > 0 then
+		remaining = currentTokens - allowed
+	end
+
+	redis.call("set", key, remaining)
+	redis.call("set", lastRefillTime, now)
+	redis.call("expire", key, 86400) -- 24小时过期
+	redis.call("expire", lastRefillTime, 86400)
+
+	return {allowed, remaining}
+	`
+
+	// 注册Lua脚本
+	b.client.ScriptLoad(context.Background(), allowNScript)
 }
 
-// AllowN 判断是否允许通过N个请求
-func (r *RedisBucket) AllowN(ctx context.Context, key string, n int64) (bool, int64, error) {
-	if n <= 0 {
-		return true, 0, nil
+// Allow 尝试获取1个令牌
+func (b *RedisBucket) Allow(ctx context.Context) (bool, error) {
+	allowed, _, err := b.AllowN(ctx, 1)
+	return allowed, err
+}
+
+// AllowN 尝试获取指定数量的令牌
+func (b *RedisBucket) AllowN(ctx context.Context, tokens int64) (bool, int64, error) {
+	if tokens <= 0 {
+		return false, 0, errors.New("tokens must be greater than 0")
 	}
 
-	// 构建Redis key
-	redisKey := fmt.Sprintf("ratelimit:token:bucket:%s", key)
-	now := time.Now().UnixMilli()
+	// 定义获取多令牌的Lua脚本
+	allowNScript := `
+	local rate = tonumber(ARGV[1])
+	local capacity = tonumber(ARGV[2])
+	local now = tonumber(ARGV[3])
+	local tokens = tonumber(ARGV[4])
+	local key = KEYS[1]
+	local lastRefillTime = key .. ":last_refill"
 
-	// 执行Lua脚本
-	result, err := r.takeNScript.Run(ctx, r.client, []string{redisKey},
-		r.config.Rate,
-		r.config.Burst,
-		now,
-		int(r.config.Expiration.Seconds()),
-		n,
-	).Result()
+	local last = tonumber(redis.call("get", lastRefillTime) or now)
+	local delta = (now - last) / 1000 * rate
+	local currentTokens = math.min(capacity, (tonumber(redis.call("get", key) or capacity) + delta))
 
+	local allowed = tokens <= currentTokens and tokens or 0
+	local remaining = currentTokens
+
+	if allowed > 0 then
+		remaining = currentTokens - allowed
+	end
+
+	redis.call("set", key, remaining)
+	redis.call("set", lastRefillTime, now)
+	redis.call("expire", key, 86400) -- 24小时过期
+	redis.call("expire", lastRefillTime, 86400)
+
+	return {allowed, remaining}
+	`
+
+	now := time.Now().UnixNano() / int64(time.Millisecond)
+	res, err := b.client.Eval(ctx, allowNScript, []string{b.key}, b.rate, b.capacity, now, tokens).Result()
 	if err != nil {
 		return false, 0, err
 	}
 
-	// 类型断言为[]interface{}
-	arr, ok := result.([]interface{})
-	if !ok {
-		return false, 0, fmt.Errorf("invalid result type: %T", result)
+	// 检查返回值类型
+	arr, ok := res.([]interface{})
+	if !ok || len(arr) < 2 {
+		return false, 0, errors.New("invalid response from redis")
 	}
 
-	// 处理allowed的类型，可能是int64或nil
-	allowed := false
+	// 处理第一个返回值（allowed）
+	var allowed int64
 	if arr[0] != nil {
 		switch v := arr[0].(type) {
 		case int64:
-			allowed = v > 0
-		case bool:
 			allowed = v
+		case bool:
+			if v {
+				allowed = tokens
+			}
+		default:
+			return false, 0, errors.New("unknown type for allowed")
 		}
 	}
 
-	// 正确处理tokens的类型，可能是int64、float64或nil
-	var tokens int64
+	// 处理第二个返回值（remaining tokens）
+	var remaining int64
 	if arr[1] != nil {
 		switch v := arr[1].(type) {
 		case int64:
-			tokens = v
+			remaining = v
 		case float64:
-			tokens = int64(v)
+			remaining = int64(v)
 		default:
-			return false, 0, fmt.Errorf("invalid tokens type: %T", v)
+			return allowed > 0, 0, nil
 		}
 	}
 
-	return allowed, tokens, nil
+	return allowed > 0, remaining, nil
 }
 
-// Close 关闭限流器连接
-func (r *RedisBucket) Close() error {
-	if r.client != nil {
-		return r.client.Close()
-	}
+// Close 关闭限流器
+func (b *RedisBucket) Close() error {
+	close(b.stop)
 	return nil
 }

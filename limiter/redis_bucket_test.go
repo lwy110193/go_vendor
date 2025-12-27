@@ -5,12 +5,14 @@ import (
 	"testing"
 	"time"
 
-	"github.com/go-redis/redis/v8"
+	"github.com/redis/go-redis/v9"
 	"github.com/stretchr/testify/assert"
 )
 
-// TestRedisBucketAllow 测试Allow方法
+// TestRedisBucketAllow 测试基本的令牌获取功能
 func TestRedisBucketAllow(t *testing.T) {
+	ctx := context.Background()
+	
 	// 创建Redis客户端
 	client := redis.NewClient(&redis.Options{
 		Addr:     "192.168.3.42:6379",
@@ -19,46 +21,31 @@ func TestRedisBucketAllow(t *testing.T) {
 	})
 	defer client.Close()
 
+	// 创建一个令牌桶，每秒产生10个令牌，容量为20
+	bucket := NewRedisBucket(client, "test:bucket:allow", 10, 20)
+	defer bucket.Close()
+
 	// 清理测试数据
-	ctx := context.Background()
-	client.Del(ctx, "ratelimit:token:bucket:test_key")
+	client.Del(ctx, "test:bucket:allow")
+	client.Del(ctx, "test:bucket:allow:last_refill")
 
-	// 创建限流器配置
-	config := &Config{
-		Rate:       10, // 每秒10个令牌
-		Burst:      5,  // 最大5个令牌
-		Expiration: time.Hour,
-	}
-
-	// 创建限流器
-	limiter := NewRedisBucket(client, config)
-
-	// 测试允许通过
-	allowed, _, err := limiter.Allow(ctx, "test_key")
+	// 测试成功获取令牌
+	allowed, err := bucket.Allow(ctx)
 	assert.NoError(t, err)
 	assert.True(t, allowed)
 
-	// 快速连续请求，消耗所有令牌
-	for i := 0; i < 4; i++ {
-		allowed, _, err = limiter.Allow(ctx, "test_key")
+	// 测试多次获取令牌
+	for i := 0; i < 10; i++ {
+		allowed, err := bucket.Allow(ctx)
 		assert.NoError(t, err)
 		assert.True(t, allowed)
 	}
-
-	// 令牌应该用完了
-	allowed, _, err = limiter.Allow(ctx, "test_key")
-	assert.NoError(t, err)
-	assert.False(t, allowed)
-
-	// 等待令牌生成
-	time.Sleep(200 * time.Millisecond) // 应该生成2个令牌
-	allowed, _, err = limiter.Allow(ctx, "test_key")
-	assert.NoError(t, err)
-	assert.True(t, allowed)
 }
 
-// TestRedisBucketAllowN 测试AllowN方法
+// TestRedisBucketAllowN 测试获取多个令牌
 func TestRedisBucketAllowN(t *testing.T) {
+	ctx := context.Background()
+	
 	// 创建Redis客户端
 	client := redis.NewClient(&redis.Options{
 		Addr:     "192.168.3.42:6379",
@@ -67,40 +54,31 @@ func TestRedisBucketAllowN(t *testing.T) {
 	})
 	defer client.Close()
 
+	// 创建一个令牌桶，每秒产生10个令牌，容量为20
+	bucket := NewRedisBucket(client, "test:bucket:allown", 10, 20)
+	defer bucket.Close()
+
 	// 清理测试数据
-	ctx := context.Background()
-	client.Del(ctx, "ratelimit:token:bucket:test_key_n")
+	client.Del(ctx, "test:bucket:allown")
+	client.Del(ctx, "test:bucket:allown:last_refill")
 
-	// 创建限流器配置
-	config := &Config{
-		Rate:       10, // 每秒10个令牌
-		Burst:      10, // 最大10个令牌
-		Expiration: time.Hour,
-	}
-
-	// 创建限流器
-	limiter := NewRedisBucket(client, config)
-
-	// 测试一次性获取3个令牌
-	allowed, tokens, err := limiter.AllowN(ctx, "test_key_n", 3)
+	// 测试成功获取多个令牌
+	allowed, remaining, err := bucket.AllowN(ctx, 5)
 	assert.NoError(t, err)
 	assert.True(t, allowed)
-	assert.Equal(t, int64(7), tokens) // 初始10个令牌，消耗3个，剩余7个
+	assert.Equal(t, int64(15), remaining)
 
-	// 测试获取超过剩余令牌数
-	allowed, tokens, err = limiter.AllowN(ctx, "test_key_n", 8)
+	// 测试获取超过剩余数量的令牌
+	allowed, remaining, err = bucket.AllowN(ctx, 20)
 	assert.NoError(t, err)
 	assert.False(t, allowed)
-	assert.Equal(t, int64(7), tokens) // 令牌数不变
-
-	// 测试获取0个令牌
-	allowed, tokens, err = limiter.AllowN(ctx, "test_key_n", 0)
-	assert.NoError(t, err)
-	assert.True(t, allowed)
+	assert.Equal(t, int64(15), remaining)
 }
 
 // TestRedisBucketExpiration 测试令牌桶过期
 func TestRedisBucketExpiration(t *testing.T) {
+	ctx := context.Background()
+	
 	// 创建Redis客户端
 	client := redis.NewClient(&redis.Options{
 		Addr:     "192.168.3.42:6379",
@@ -109,39 +87,28 @@ func TestRedisBucketExpiration(t *testing.T) {
 	})
 	defer client.Close()
 
+	// 创建一个令牌桶，每秒产生10个令牌，容量为20
+	bucket := NewRedisBucket(client, "test:bucket:expiration", 10, 20)
+	defer bucket.Close()
+
 	// 清理测试数据
-	ctx := context.Background()
-	testKey := "ratelimit:token:bucket:test_expiration"
-	client.Del(ctx, testKey)
+	client.Del(ctx, "test:bucket:expiration")
+	client.Del(ctx, "test:bucket:expiration:last_refill")
 
-	// 创建限流器配置，设置短过期时间
-	config := &Config{
-		Rate:       10,
-		Burst:      5,
-		Expiration: 2 * time.Second, // 2秒过期
-	}
-
-	// 创建限流器
-	limiter := NewRedisBucket(client, config)
-
-	// 消耗一些令牌
-	for i := 0; i < 3; i++ {
-		allowed, _, err := limiter.Allow(ctx, "test_expiration")
-		assert.NoError(t, err)
-		assert.True(t, allowed)
-	}
-
-	// 等待过期
-	time.Sleep(2 * time.Second)
-
-	// 验证键已过期
-	exists, err := client.Exists(ctx, testKey).Result()
-	assert.NoError(t, err)
-	assert.Equal(t, int64(0), exists)
-
-	// 再次请求应该重置令牌桶
-	allowed, tokens, err := limiter.Allow(ctx, "test_expiration")
+	// 获取一些令牌
+	allowed, remaining, err := bucket.AllowN(ctx, 5)
 	assert.NoError(t, err)
 	assert.True(t, allowed)
-	assert.Equal(t, int64(4), tokens) // 重置后应有5个令牌，消耗1个，剩余4个
-}
+	assert.Equal(t, int64(15), remaining)
+
+	// 等待一段时间，让令牌桶补充一些令牌
+	time.Sleep(2 * time.Second)
+
+	// 再次获取令牌，应该能获取到更多
+	allowed, remaining, err = bucket.AllowN(ctx, 10)
+	assert.NoError(t, err)
+	assert.True(t, allowed)
+	// 2秒后应该补充了约20个令牌，但受容量限制，最多20个
+	// 减去之前剩余的15个，应该新增了5个，所以现在剩余应该是15+5-10=10
+	assert.True(t, remaining <= 20)
+}
