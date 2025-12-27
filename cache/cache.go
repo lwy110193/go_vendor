@@ -28,17 +28,17 @@ type RedisCache struct {
 
 // NewRedisCache 创建Redis缓存实例
 func NewRedisCache(addr string, password string, db int) *RedisCache {
-	client := NewRedisClient(addr, password, db)
-	return &RedisCache{client: client}
-}
-
-// NewRedisClient 创建Redis客户端
-func NewRedisClient(addr string, password string, db int) *redis.Client {
-	return redis.NewClient(&redis.Options{
+	client := redis.NewClient(&redis.Options{
 		Addr:     addr,
 		Password: password,
 		DB:       db,
 	})
+	return &RedisCache{client: client}
+}
+
+// NewRedisClient 创建Redis客户端
+func NewRedisCacheWithClient(client *redis.Client) *RedisCache {
+	return &RedisCache{client: client}
 }
 
 // Set 设置缓存
