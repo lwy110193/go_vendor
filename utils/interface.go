@@ -259,6 +259,29 @@ func ConvStructToGetParam(data interface{}, str_ptr *string) {
 	}
 }
 
+// ConvStructToGetParamFromJsonTag 结构体转GET参数字符串，只处理一级，字段名从json标签获取
+func ConvStructToGetParamFromJsonTag(data interface{}, str_ptr *string) {
+	dataType := reflect.TypeOf(data)
+	dataValue := reflect.ValueOf(data)
+	if dataType.Kind() == reflect.Ptr {
+		dataType = dataType.Elem()
+		dataValue = dataValue.Elem()
+	}
+
+	for i := 0; i < dataType.NumField(); i++ {
+		field := dataType.Field(i).Tag.Get("json")
+		if field == "" {
+			continue
+		}
+		value := dataValue.Field(i).Interface()
+		if reflect.TypeOf(value).Kind() == reflect.Struct && dataType.Field(i).Anonymous {
+			ConvStructToGetParam(value, str_ptr)
+		} else {
+			*str_ptr += fmt.Sprintf("%s=%v&", field, value)
+		}
+	}
+}
+
 // RangeDateList 开始日期到结束日期之间日期列表
 func RangeDateList(startDate string, endDate string) (list []string) {
 	if len(startDate) > 10 {
