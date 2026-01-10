@@ -2,7 +2,8 @@ package struct_utils
 
 import (
 	"reflect"
-	"strings"
+
+	"github.com/lwy110193/go_vendor/utils"
 )
 
 // FilterOperator 定义支持的过滤操作符
@@ -33,15 +34,6 @@ type FilterCondition struct {
 	Value interface{} `json:"value"`
 }
 
-// toLowerCamelCase 将字符串转换为小写驼峰
-func toLowerCamelCase(s string) string {
-	if s == "" {
-		return ""
-	}
-	// 转换首字母为小写
-	return strings.ToLower(s[:1]) + s[1:]
-}
-
 // getMatchingFieldName 获取匹配的字段名，支持大小写驼峰写法匹配
 func getMatchingFieldName(v reflect.Value, fieldName string) string {
 	// 获取结构体类型
@@ -55,7 +47,7 @@ func getMatchingFieldName(v reflect.Value, fieldName string) string {
 			return field.Name
 		}
 		// 转换为小写驼峰进行比较，支持大小写驼峰写法
-		if toLowerCamelCase(field.Name) == toLowerCamelCase(fieldName) {
+		if utils.CamelStrConv(field.Name) == utils.CamelStrConv(fieldName) {
 			return field.Name
 		}
 	}
