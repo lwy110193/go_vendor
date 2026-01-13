@@ -11,6 +11,10 @@ import (
 type FilterOperator string
 
 const (
+	// Prefix 前缀查询
+	Prefix FilterOperator = "prefix"
+	// Suffix 后缀查询
+	Suffix FilterOperator = "suffix"
 	// Like 模糊查询
 	Like FilterOperator = "like"
 	// Equal 等于
@@ -124,6 +128,10 @@ func matchCondition(fieldValue reflect.Value, operator FilterOperator, value int
 
 	// 根据操作符进行比较
 	switch operator {
+	case Prefix:
+		return strings.HasPrefix(fieldValue.Interface().(string), valueValue.Interface().(string))
+	case Suffix:
+		return strings.HasSuffix(fieldValue.Interface().(string), valueValue.Interface().(string))
 	case Like:
 		return strings.Contains(fieldValue.Interface().(string), valueValue.Interface().(string))
 	case Equal:
