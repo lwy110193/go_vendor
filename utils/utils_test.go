@@ -7,9 +7,15 @@ import (
 	"github.com/lwy110193/go_vendor/utils"
 )
 
+type AA struct {
+	FieldOne string
+	FieldTwo int
+}
+
 type TestStruct struct {
 	FieldFdsdf  string `json:"field1"`
 	FieldGavdds int    `json:"field2"`
+	Aobj        *AA    `json:"aobj"`
 }
 type Result struct {
 	FieldOne string
@@ -36,13 +42,21 @@ func TestGetAttrValueList(t *testing.T) {
 		{
 			FieldFdsdf:  "value1",
 			FieldGavdds: 42,
+			Aobj: &AA{
+				FieldOne: "a1",
+				FieldTwo: 1,
+			},
 		},
 		{
 			FieldFdsdf:  "value2",
 			FieldGavdds: 43,
+			Aobj: &AA{
+				FieldOne: "a2",
+				FieldTwo: 2,
+			},
 		},
 	}
-	result := []string{}
-	utils.GetAttrValueList(d, "FieldGavdds", &result)
+	result := []*AA{}
+	utils.GetAttrValueList(d, "Aobj", &result)
 	fmt.Printf("%#v", result)
 }
