@@ -66,4 +66,13 @@ func TestFilter(t *testing.T) {
 	if len(result5) != 2 {
 		t.Errorf("Test 5 failed: expected 2 results, got %d", len(result5))
 	}
+
+	// 测试条件6：A包含"a"
+	filter6 := []FilterCondition{
+		{FieldName: "A", Operator: In, Value: []string{"a", "b"}},
+	}
+	result6 := Filter(testData, filter6...)
+	if len(result6) != 3 {
+		t.Errorf("Test 6 failed: expected 3 results, got %d", len(result6))
+	}
 }
