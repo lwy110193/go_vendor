@@ -460,3 +460,41 @@ func FormatTimeToSpecifyTimezone(targetTime string, fromTimezone, toTimezone str
 	newT := t.In(targetLoc)
 	return newT.Format(time.DateTime), nil
 }
+
+// UnionSlice 查询多个切片的并集,去重
+func UnionSlice[T comparable](slices ...[]T) []T {
+	union := make(map[T]struct{})
+	for _, slice := range slices {
+		for _, v := range slice {
+			union[v] = struct{}{}
+		}
+	}
+	result := make([]T, 0, len(union))
+	for v := range union {
+		result = append(result, v)
+	}
+	return result
+}
+
+// 查询多个切片的交集
+func IntersectSlice[T comparable](slices ...[]T) []T {
+	if len(slices) == 0 {
+		return []T{}
+	}
+	intersect := make(map[T]struct{})
+	for _, v := range slices[0] {
+		intersect[v] = struct{}{}
+	}
+	for _, slice := range slices[1:] {
+		for v := range intersect {
+			if !InList(v, slice) {
+				delete(intersect, v)
+			}
+		}
+	}
+	result := make([]T, 0, len(intersect))
+	for v := range intersect {
+		result = append(result, v)
+	}
+	return result
+}
