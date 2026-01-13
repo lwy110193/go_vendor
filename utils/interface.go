@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"math"
 	"math/rand"
-	"reflect"
 	"strconv"
 	"strings"
 	"time"
@@ -79,47 +78,6 @@ func Truncate[T any](list *[]T, length int) (tList []T) {
 	return
 }
 
-// CamelStrConv 驼峰字符串 转 下划线字符串
-func CamelStrConv(str string) string {
-	// 处理特殊情况
-	switch str {
-	case "ID":
-		return "id"
-	case "UpdatedAt":
-		return "updated_at"
-	case "CreatedAt":
-		return "created_at"
-	}
-
-	// 使用strings.Builder优化字符串拼接性能
-	var builder strings.Builder
-	builder.Grow(len(str) * 2) // 预分配足够的空间，最多可能翻倍长度
-
-	for i, c := range str {
-		// 直接判断大写字母范围，避免map查找
-		if c >= 'A' && c <= 'Z' {
-			// 不是第一个字符时添加下划线
-			if i > 0 {
-				builder.WriteByte('_')
-			}
-			// 转换为小写字母
-			builder.WriteRune(c + 32)
-		} else {
-			builder.WriteRune(c)
-		}
-	}
-
-	// 构建结果字符串
-	result := builder.String()
-
-	// 处理特殊情况：如果结果以_开头，去掉开头的_
-	if len(result) > 0 && result[0] == '_' {
-		return result[1:]
-	}
-
-	return result
-}
-
 // ToInterfaceSlice 转换为interface切片
 func ToInterfaceSlice[T any](list []T) (data []interface{}) {
 	for _, item := range list {
@@ -171,115 +129,6 @@ func Float64Add(a, b float64) float64 {
 	var v3 = v1.Add(v2)
 	fVal, _ := v3.Float64()
 	return fVal
-}
-
-// SetAttrValue 设置结构体字段值，字段传值可 驼峰 或 下划线字符串
-func SetAttrValue(data interface{}, field string, value interface{}) {
-	dataType := reflect.TypeOf(data)
-	dataValue := reflect.ValueOf(data)
-	if dataType.Kind() == reflect.Ptr {
-		dataType = dataType.Elem()
-		dataValue = dataValue.Elem()
-	}
-
-	for i := 0; i < dataType.NumField(); i++ {
-		if dataType.Field(i).Name == field || CamelStrConv(dataType.Field(i).Name) == field {
-			dataValue.Field(i).Set(reflect.ValueOf(value))
-			return
-		}
-	}
-}
-
-// DataConvert 复制不同struct同key值到另一个结构体
-func DataConvert(from interface{}, to interface{}) {
-	typeOfFrom := reflect.TypeOf(from)
-	valueOfFrom := reflect.ValueOf(from)
-	if typeOfFrom.Kind() == reflect.Ptr {
-		typeOfFrom = typeOfFrom.Elem()
-		valueOfFrom = valueOfFrom.Elem()
-	}
-	fromFieldTypeMap := map[string]string{}
-	fromFieldValueMap := map[string]interface{}{}
-	for i := 0; i < typeOfFrom.NumField(); i++ {
-		fromFieldTypeMap[typeOfFrom.Field(i).Name] = typeOfFrom.Field(i).Type.String()
-		fromFieldValueMap[typeOfFrom.Field(i).Name] = valueOfFrom.Field(i).Interface()
-	}
-
-	typeOfTo := reflect.TypeOf(to)
-	valueOfTo := reflect.ValueOf(to)
-	if typeOfTo.Kind() == reflect.Ptr {
-		typeOfTo = typeOfTo.Elem()
-		valueOfTo = valueOfTo.Elem()
-	}
-	for i := 0; i < typeOfTo.NumField(); i++ {
-		if fromFieldValueMap[typeOfTo.Field(i).Name] != nil && fromFieldTypeMap[typeOfTo.Field(i).Name] == typeOfTo.Field(i).Type.String() && valueOfTo.Field(i).CanSet() {
-			valueOfTo.Field(i).Set(reflect.ValueOf(fromFieldValueMap[typeOfTo.Field(i).Name]))
-		}
-	}
-
-}
-
-// ConvStructToMap 结构体转map，只处理一级
-func ConvStructToMap(data interface{}, result MI) {
-	dataType := reflect.TypeOf(data)
-	dataValue := reflect.ValueOf(data)
-	if dataType.Kind() == reflect.Ptr {
-		dataType = dataType.Elem()
-		dataValue = dataValue.Elem()
-	}
-
-	for i := 0; i < dataType.NumField(); i++ {
-		field := CamelStrConv(dataType.Field(i).Name)
-		value := dataValue.Field(i).Interface()
-		if reflect.TypeOf(value).Kind() == reflect.Struct && dataType.Field(i).Anonymous {
-			ConvStructToMap(value, result)
-		} else {
-			result[field] = value
-		}
-	}
-}
-
-// ConvStructToGetParam 结构体转GET参数字符串，只处理一级
-func ConvStructToGetParam(data interface{}, str_ptr *string) {
-	dataType := reflect.TypeOf(data)
-	dataValue := reflect.ValueOf(data)
-	if dataType.Kind() == reflect.Ptr {
-		dataType = dataType.Elem()
-		dataValue = dataValue.Elem()
-	}
-
-	for i := 0; i < dataType.NumField(); i++ {
-		field := CamelStrConv(dataType.Field(i).Name)
-		value := dataValue.Field(i).Interface()
-		if reflect.TypeOf(value).Kind() == reflect.Struct && dataType.Field(i).Anonymous {
-			ConvStructToGetParam(value, str_ptr)
-		} else {
-			*str_ptr += fmt.Sprintf("%s=%v&", field, value)
-		}
-	}
-}
-
-// ConvStructToGetParamFromJsonTag 结构体转GET参数字符串，只处理一级，字段名从json标签获取
-func ConvStructToGetParamFromJsonTag(data interface{}, str_ptr *string) {
-	dataType := reflect.TypeOf(data)
-	dataValue := reflect.ValueOf(data)
-	if dataType.Kind() == reflect.Ptr {
-		dataType = dataType.Elem()
-		dataValue = dataValue.Elem()
-	}
-
-	for i := 0; i < dataType.NumField(); i++ {
-		field := dataType.Field(i).Tag.Get("json")
-		if field == "" {
-			continue
-		}
-		value := dataValue.Field(i).Interface()
-		if reflect.TypeOf(value).Kind() == reflect.Struct && dataType.Field(i).Anonymous {
-			ConvStructToGetParam(value, str_ptr)
-		} else {
-			*str_ptr += fmt.Sprintf("%s=%v&", field, value)
-		}
-	}
 }
 
 // RangeDateList 开始日期到结束日期之间日期列表

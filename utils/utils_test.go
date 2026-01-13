@@ -30,3 +30,19 @@ func TestConvStructToMap(t *testing.T) {
 	utils.ConvStructToMap(d, m)
 	fmt.Printf("%#v", m)
 }
+
+func TestGetAttrValueList(t *testing.T) {
+	d := []TestStruct{
+		{
+			FieldFdsdf:  "value1",
+			FieldGavdds: 42,
+		},
+		{
+			FieldFdsdf:  "value2",
+			FieldGavdds: 43,
+		},
+	}
+	result := []string{}
+	utils.GetAttrValueList(d, "FieldGavdds", &result)
+	fmt.Printf("%#v", result)
+}
