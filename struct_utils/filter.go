@@ -2,6 +2,7 @@ package struct_utils
 
 import (
 	"reflect"
+	"strings"
 
 	"github.com/lwy110193/go_vendor/utils"
 )
@@ -10,6 +11,8 @@ import (
 type FilterOperator string
 
 const (
+	// Like 模糊查询
+	Like FilterOperator = "like"
 	// Equal 等于
 	Equal FilterOperator = "eq"
 	// NotEqual 不等于
@@ -121,6 +124,8 @@ func matchCondition(fieldValue reflect.Value, operator FilterOperator, value int
 
 	// 根据操作符进行比较
 	switch operator {
+	case Like:
+		return strings.Contains(fieldValue.Interface().(string), valueValue.Interface().(string))
 	case Equal:
 		return reflect.DeepEqual(fieldValue.Interface(), valueValue.Interface())
 	case NotEqual:
