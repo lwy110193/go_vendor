@@ -6,6 +6,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/gin-gonic/gin"
 	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
@@ -507,6 +508,11 @@ func (l *Logger) Named(name string) *Logger {
 
 // addTraceContext 从context中提取trace和span信息，添加到keysAndValues中
 func (l *Logger) addTraceContext(ctx context.Context, keysAndValues ...interface{}) []interface{} {
+	// 判断是否gin.Context
+	if _, ok := ctx.(*gin.Context); ok {
+		ctx = ctx.(*gin.Context).Request.Context()
+	}
+
 	// 从context中获取span
 	if span := trace.SpanFromContext(ctx); span.SpanContext().IsValid() {
 		// 创建新的切片，保留原有容量并添加trace信息
