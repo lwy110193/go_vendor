@@ -7,50 +7,53 @@ import (
 	"time"
 )
 
-// MemoryCache 基于内存的缓存实现
+const defaultCleanupInterval = 5 * time.Minute
+
+// 基于内存的缓存实现。
 type MemoryCache struct {
-	// 存储缓存项的map
 	items map[string]*memoryItem
-	// 读写锁，保证并发安全
-	mutex sync.RWMutex
-	// 清理过期项的定时器
+
+	mutex         sync.RWMutex
 	cleanupTicker *time.Ticker
-	// 停止清理的通道
-	stopChan chan struct{}
+	stopChan      chan struct{}
+	closeOnce     sync.Once
+	closed        bool
 }
 
-// memoryItem 内存缓存项
 type memoryItem struct {
-	// 缓存值，已序列化
-	value []byte
-	// 过期时间
+	value      []byte
 	expiration time.Time
 }
 
-// NewMemoryCache 创建内存缓存实例
+// 使用默认清理间隔创建内存缓存。
 func NewMemoryCache() *MemoryCache {
+	return NewMemoryCacheWithCleanupInterval(defaultCleanupInterval)
+}
+
+// 使用自定义清理间隔创建内存缓存。
+// 清理间隔小于等于 0 时禁用后台清理。
+func NewMemoryCacheWithCleanupInterval(cleanupInterval time.Duration) *MemoryCache {
 	cache := &MemoryCache{
 		items:    make(map[string]*memoryItem),
 		stopChan: make(chan struct{}),
 	}
 
-	// 启动清理过期项的后台协程
-	cache.startCleanupRoutine()
+	if cleanupInterval > 0 {
+		cache.startCleanupRoutine(cleanupInterval)
+	}
 
 	return cache
 }
 
-// startCleanupRoutine 启动清理过期项的后台协程
-func (m *MemoryCache) startCleanupRoutine() {
-	// 每5分钟清理一次过期项
-	m.cleanupTicker = time.NewTicker(5 * time.Minute)
+func (m *MemoryCache) startCleanupRoutine(interval time.Duration) {
+	m.cleanupTicker = time.NewTicker(interval)
 
 	go func() {
 		for {
 			select {
-			case <- m.cleanupTicker.C:
+			case <-m.cleanupTicker.C:
 				m.deleteExpired()
-			case <- m.stopChan:
+			case <-m.stopChan:
 				m.cleanupTicker.Stop()
 				return
 			}
@@ -58,132 +61,168 @@ func (m *MemoryCache) startCleanupRoutine() {
 	}()
 }
 
-// deleteExpired 删除所有过期的缓存项
 func (m *MemoryCache) deleteExpired() {
 	now := time.Now()
+
 	m.mutex.Lock()
 	defer m.mutex.Unlock()
 
 	for key, item := range m.items {
-		if !item.expiration.IsZero() && now.After(item.expiration) {
+		if item.expired(now) {
 			delete(m.items, key)
 		}
 	}
 }
 
-// Set 设置缓存
-func (m *MemoryCache) Set(ctx context.Context, key string, value interface{}, expiration time.Duration) error {
-	// 检查上下文是否已取消
-	if ctx.Err() != nil {
-		return ctx.Err()
+func (m *MemoryCache) deleteExpiredKey(key string, item *memoryItem, now time.Time) {
+	m.mutex.Lock()
+	defer m.mutex.Unlock()
+
+	current, found := m.items[key]
+	if found && current == item && current.expired(now) {
+		delete(m.items, key)
+	}
+}
+
+func (i *memoryItem) expired(now time.Time) bool {
+	return i != nil && !i.expiration.IsZero() && !now.Before(i.expiration)
+}
+
+// 写入缓存值。
+func (m *MemoryCache) Set(ctx context.Context, key string, value interface{}, expiration time.Duration, randomExpiration ...bool) error {
+	if err := ctx.Err(); err != nil {
+		return err
 	}
 
-	// 序列化数据
 	data, err := json.Marshal(value)
 	if err != nil {
 		return err
 	}
 
-	// 计算过期时间
 	var expiry time.Time
+	expiration = addRandomExpiration(expiration, randomExpiration...)
 	if expiration > 0 {
 		expiry = time.Now().Add(expiration)
 	}
 
 	m.mutex.Lock()
+	defer m.mutex.Unlock()
+
+	if m.closed {
+		return ErrCacheClosed
+	}
+
 	m.items[key] = &memoryItem{
 		value:      data,
 		expiration: expiry,
 	}
-	m.mutex.Unlock()
-
 	return nil
 }
 
-// Get 获取缓存
+// 将缓存值读取到目标对象。
 func (m *MemoryCache) Get(ctx context.Context, key string, dest interface{}) error {
-	// 检查上下文是否已取消
-	if ctx.Err() != nil {
-		return ctx.Err()
+	if err := ctx.Err(); err != nil {
+		return err
 	}
+
+	now := time.Now()
 
 	m.mutex.RLock()
 	item, found := m.items[key]
+	closed := m.closed
 	m.mutex.RUnlock()
 
+	if closed {
+		return ErrCacheClosed
+	}
 	if !found {
 		return ErrKeyNotFound
 	}
-
-	// 检查是否过期
-	if !item.expiration.IsZero() && time.Now().After(item.expiration) {
-		// 在获取时异步删除过期项
-		go m.Delete(ctx, key)
+	if item.expired(now) {
+		m.deleteExpiredKey(key, item, now)
 		return ErrKeyNotFound
 	}
 
-	// 反序列化数据
 	return json.Unmarshal(item.value, dest)
 }
 
-// Delete 删除缓存
+// 删除缓存值。
 func (m *MemoryCache) Delete(ctx context.Context, key string) error {
-	// 检查上下文是否已取消
-	if ctx.Err() != nil {
-		return ctx.Err()
+	if err := ctx.Err(); err != nil {
+		return err
 	}
 
 	m.mutex.Lock()
-	delete(m.items, key)
-	m.mutex.Unlock()
+	defer m.mutex.Unlock()
 
+	if m.closed {
+		return ErrCacheClosed
+	}
+
+	delete(m.items, key)
 	return nil
 }
 
-// Exists 检查缓存是否存在
+// 判断未过期的键是否存在。
 func (m *MemoryCache) Exists(ctx context.Context, key string) (bool, error) {
-	// 检查上下文是否已取消
-	if ctx.Err() != nil {
-		return false, ctx.Err()
+	if err := ctx.Err(); err != nil {
+		return false, err
 	}
+
+	now := time.Now()
 
 	m.mutex.RLock()
 	item, found := m.items[key]
+	closed := m.closed
 	m.mutex.RUnlock()
 
+	if closed {
+		return false, ErrCacheClosed
+	}
 	if !found {
 		return false, nil
 	}
-
-	// 检查是否过期
-	if !item.expiration.IsZero() && time.Now().After(item.expiration) {
-		// 在检查时异步删除过期项
-		go m.Delete(ctx, key)
+	if item.expired(now) {
+		m.deleteExpiredKey(key, item, now)
 		return false, nil
 	}
 
 	return true, nil
 }
 
-// Close 关闭缓存，停止清理协程
+// 停止后台清理并清空缓存值。
 func (m *MemoryCache) Close() error {
-	close(m.stopChan)
-	m.mutex.Lock()
-	m.items = make(map[string]*memoryItem) // 清空所有缓存项
-	m.mutex.Unlock()
+	m.closeOnce.Do(func() {
+		if m.cleanupTicker != nil {
+			close(m.stopChan)
+		}
+
+		m.mutex.Lock()
+		m.closed = true
+		m.items = make(map[string]*memoryItem)
+		m.mutex.Unlock()
+	})
+
 	return nil
 }
 
-// Size 获取当前缓存项数量
+// 返回未过期缓存项数量。
 func (m *MemoryCache) Size() int {
+	m.deleteExpired()
+
 	m.mutex.RLock()
 	defer m.mutex.RUnlock()
 	return len(m.items)
 }
 
-// Clear 清空所有缓存项
+// 清空所有缓存值。
 func (m *MemoryCache) Clear() {
 	m.mutex.Lock()
+	defer m.mutex.Unlock()
+
+	if m.closed {
+		return
+	}
+
 	m.items = make(map[string]*memoryItem)
-	m.mutex.Unlock()
 }
