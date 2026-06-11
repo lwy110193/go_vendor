@@ -2,6 +2,7 @@ package trace
 
 import (
 	"context"
+	"strings"
 	"sync"
 	"time"
 
@@ -19,47 +20,40 @@ func SetCtxTraceKey(key string) {
 type Trace struct {
 	mu sync.RWMutex
 
-	traceID      string
-	spanID       string
-	parentSpanID string
-	startTime    time.Time
-	endTime      time.Time
-	attributes   map[string]any
+	traceID       string
+	parentTraceID string
+	startTime     time.Time
+	attributes    map[string]any
 }
 
-// ContextWithTrace 将链路写入上下文。
-func ContextWithTrace(ctx context.Context, trace *Trace) context.Context {
-	if ctx == nil {
-		ctx = context.Background()
+func GetTraceId(ctx context.Context) string {
+	if trace := traceFromContext(ctx); trace != nil {
+		return trace.TraceID()
 	}
-	if trace == nil {
-		return ctx
+	return ""
+}
+
+func GetParentTraceId(ctx context.Context) string {
+	if trace := traceFromContext(ctx); trace != nil {
+		return trace.ParentTraceID()
 	}
-	return context.WithValue(ctx, ctxValueKey, trace)
+	return ""
+}
+
+func GetCostTime(ctx context.Context) time.Duration {
+	if trace := traceFromContext(ctx); trace != nil {
+		return trace.Duration()
+	}
+	return 0
 }
 
 // NewTrace 根据上下文创建日志链路。
-func NewTrace(ctx context.Context, attributes ...map[string]any) *Trace {
+func NewTrace(ctx context.Context, attributes ...map[string]any) context.Context {
+	var parentTraceID string
 	if parent := traceFromContext(ctx); parent != nil {
-		return parent.NewChild(attributes...)
+		parentTraceID = parent.TraceID()
 	}
-	return newTrace("", attributes...)
-}
-
-// NewChild 创建当前链路下的子链路。
-func (t *Trace) NewChild(attributes ...map[string]any) *Trace {
-	if t == nil {
-		return NewTrace(context.Background(), attributes...)
-	}
-
-	t.mu.RLock()
-	traceID := t.traceID
-	parentSpanID := t.spanID
-	t.mu.RUnlock()
-
-	child := newTrace(parentSpanID, attributes...)
-	child.traceID = traceID
-	return child
+	return context.WithValue(ctx, ctxValueKey, newTrace(parentTraceID, attributes...))
 }
 
 func traceFromContext(ctx context.Context) *Trace {
@@ -71,13 +65,12 @@ func traceFromContext(ctx context.Context) *Trace {
 	return trace
 }
 
-func newTrace(parentSpanID string, attributes ...map[string]any) *Trace {
+func newTrace(parentTraceID string, attributes ...map[string]any) *Trace {
 	t := &Trace{
-		traceID:      uuid.NewString(),
-		spanID:       uuid.NewString(),
-		parentSpanID: parentSpanID,
-		startTime:    time.Now(),
-		attributes:   make(map[string]any),
+		traceID:       strings.ReplaceAll(uuid.NewString(), "-", "")[:16],
+		parentTraceID: parentTraceID,
+		startTime:     time.Now(),
+		attributes:    make(map[string]any),
 	}
 
 	for _, attrs := range attributes {
@@ -89,93 +82,24 @@ func newTrace(parentSpanID string, attributes ...map[string]any) *Trace {
 	return t
 }
 
-// End 结束当前链路并记录结束时间。
-func (t *Trace) End() {
-	if t == nil {
-		return
-	}
-
-	t.mu.Lock()
-	defer t.mu.Unlock()
-
-	if t.endTime.IsZero() {
-		t.endTime = time.Now()
-	}
-}
-
 // TraceID 返回链路 ID。
 func (t *Trace) TraceID() string {
-	if t == nil {
-		return ""
-	}
-
-	t.mu.RLock()
-	defer t.mu.RUnlock()
 	return t.traceID
 }
 
-// SpanID 返回当前节点 ID。
-func (t *Trace) SpanID() string {
-	if t == nil {
-		return ""
-	}
-
-	t.mu.RLock()
-	defer t.mu.RUnlock()
-	return t.spanID
-}
-
-// ParentSpanID 返回父节点 ID。
-func (t *Trace) ParentSpanID() string {
-	if t == nil {
-		return ""
-	}
-
-	t.mu.RLock()
-	defer t.mu.RUnlock()
-	return t.parentSpanID
+// ParentTraceID 返回父节点 ID。
+func (t *Trace) ParentTraceID() string {
+	return t.parentTraceID
 }
 
 // StartTime 返回链路开始时间。
 func (t *Trace) StartTime() time.Time {
-	if t == nil {
-		return time.Time{}
-	}
-
-	t.mu.RLock()
-	defer t.mu.RUnlock()
 	return t.startTime
-}
-
-// EndTime 返回链路结束时间。
-func (t *Trace) EndTime() time.Time {
-	if t == nil {
-		return time.Time{}
-	}
-
-	t.mu.RLock()
-	defer t.mu.RUnlock()
-	return t.endTime
 }
 
 // Duration 返回链路耗时；未结束时返回从开始到当前的耗时。
 func (t *Trace) Duration() time.Duration {
-	if t == nil {
-		return 0
-	}
-
-	t.mu.RLock()
-	startTime := t.startTime
-	endTime := t.endTime
-	t.mu.RUnlock()
-
-	if startTime.IsZero() {
-		return 0
-	}
-	if endTime.IsZero() {
-		return time.Since(startTime)
-	}
-	return endTime.Sub(startTime)
+	return time.Since(t.startTime)
 }
 
 // SetAttribute 设置链路属性。
@@ -228,23 +152,11 @@ func (t *Trace) Fields() map[string]any {
 
 	fields := make(map[string]any, len(t.attributes)+6)
 	fields["trace_id"] = t.traceID
-	fields["span_id"] = t.spanID
-	fields["parent_span_id"] = t.parentSpanID
+	fields["p_trace_id"] = t.parentTraceID
 	fields["start_time"] = t.startTime
-	fields["end_time"] = t.endTime
-	fields["duration"] = t.durationLocked()
+	fields["duration"] = t.Duration()
 	for key, value := range t.attributes {
 		fields[key] = value
 	}
 	return fields
-}
-
-func (t *Trace) durationLocked() time.Duration {
-	if t.startTime.IsZero() {
-		return 0
-	}
-	if t.endTime.IsZero() {
-		return time.Since(t.startTime)
-	}
-	return t.endTime.Sub(t.startTime)
 }
